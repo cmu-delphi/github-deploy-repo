@@ -5,7 +5,7 @@ generates a "badge" for github repos (based on http://shield.io)
 initial version by dfarrow on 2016-10-20
 
 test like:
-  curl http://delphi.midas.cs.cmu.edu/~automation/public/github_repo_deploy/badge.php?repo=cmu-delphi/www-nowcast
+  curl http://delphi.midas.cs.cmu.edu/~automation/public/github_deploy_repo/badge.php?repo=cmu-delphi/www-nowcast
 */
 
 // conveniently reuse automation's database "library"

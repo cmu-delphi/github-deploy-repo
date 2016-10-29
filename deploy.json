@@ -4,20 +4,20 @@
   "actions": [
     {
       "type": "copy",
-      "src": "src/github_repo_deploy.py",
-      "dst": "../github_repo_deploy.py",
+      "src": "src/github_deploy_repo.py",
+      "dst": "../github_deploy_repo.py",
       "add-header-comment": true
     },
     {
       "type": "copy",
       "src": "src/webhook.php",
-      "dst": "/home/automation/public_html/public/github_repo_deploy/webhook.php",
+      "dst": "/home/automation/public_html/public/github_deploy_repo/webhook.php",
       "add-header-comment": true
     },
     {
       "type": "copy",
       "src": "src/badge.php",
-      "dst": "/home/automation/public_html/public/github_repo_deploy/badge.php",
+      "dst": "/home/automation/public_html/public/github_deploy_repo/badge.php",
       "add-header-comment": true
     }
   ]

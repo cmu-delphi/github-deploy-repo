@@ -5,7 +5,7 @@ updates local repos (via automation) whenever a new commit is pushed to github
 initial version by dfarrow on 2016-10-17
 
 test like:
-  curl -X POST -d '{"after":"abcd1234", "repository":{"name":"some-delphi-repo"}}' http://delphi.midas.cs.cmu.edu/~automationpublic/github_repo_deploy/webhook.php
+  curl -X POST -d '{"after":"abcd1234", "repository":{"name":"some-delphi-repo"}}' http://delphi.midas.cs.cmu.edu/~automationpublic/github_deploy_repo/webhook.php
 */
 
 // conveniently reuse automation's database "library"
