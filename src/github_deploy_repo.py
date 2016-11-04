@@ -70,6 +70,8 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2016-11-03
+  * create directories when copying files
 2016-10-28
   + support header for PHP files
   * fix newlines when replacing keywords
@@ -226,13 +228,17 @@ def execute(repo_link, path, config):
         tmp = get_file(src[2] + '__tmp', '/common')
         print(' [%s] -> [%s]' % (src[0], tmp[0]))
         shutil.copy(src[0], tmp[0])
-        # move as user `webadmin`
+        # make directory and move the file as user `webadmin`
+        cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
+        print('  [%s]' % cmd)
+        subprocess.check_call(cmd, shell=True)
         cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
         print('  [%s]' % cmd)
         subprocess.check_call(cmd, shell=True)
       else:
-        # plain copy
+        # make directory and copy the file
         print(' [%s] -> [%s]' % (src[0], dst[0]))
+        os.makedirs(dst[1], exist_ok=True)
         shutil.copy(src[0], dst[0])
     elif action == 'compile-coffee':
       # compile-coffee <src> <dst>
