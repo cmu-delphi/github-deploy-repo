@@ -28,6 +28,9 @@ commands ("actions") are described below.
     fields:
     - [src] The source file. (required)
     - [dst] The destination file. (required)
+    - [match] A regular expression. The action is applied to all files whose
+      basename matches the regex. If this field is present, `src` and `dst` are
+      interpreted as directories instead of files. (optional)
     - [add-header-comment] Whether to include a header comment (containing a
       warning not to edit the file and a pointer to the repository) at the top
       of the destination file. (optional)
@@ -76,6 +79,7 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
   + support header for htaccess files
   + treat actions of type string as comments
   + `move` command
+  + match files for copy/move with optional regex
 2016-11-05
   * fancier header for generated files
 2016-11-03
@@ -95,8 +99,10 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 # built-in
 import argparse
+import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -235,39 +241,52 @@ def execute(repo_link, path, config):
     if action in ('copy', 'move'):
       # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
       src, dst = get_file(row['src'], path), get_file(row['dst'], path)
-      print(' %s %s -> %s' % (action, src[2], dst[2]))
       # check access
       check_file(src[0])
-      # put a big "do not edit" warning at the top of the file
-      if row.get('add-header-comment', False) is True:
-        src = add_header(repo_link, src, dst[3])
-      # replace template keywords with values
-      templates = row.get('replace-keywords')
-      if type(templates) is str:
-        templates = [templates]
-      if type(templates) in (tuple, list):
-        src = replace_keywords(src, [get_file(t, path) for t in templates])
-      # make the copy (method depends on destination)
-      if dst[0].startswith('/var/www/html/'):
-        # copy to staging area
-        tmp = get_file(src[2] + '__tmp', '/common')
-        print(' [%s] -> [%s]' % (src[0], tmp[0]))
-        shutil.copy(src[0], tmp[0])
-        # make directory and move the file as user `webadmin`
-        cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
-        print('  [%s]' % cmd)
-        subprocess.check_call(cmd, shell=True)
-        cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
-        print('  [%s]' % cmd)
-        subprocess.check_call(cmd, shell=True)
+      # determine which file(s) should be used
+      if 'match' in row:
+        sources, destinations = [], []
+        for name in glob.glob(os.path.join(src[0], '*')):
+          src2 = get_file(name)
+          basename = src2[2]
+          if re.match(row['match'], basename) is not None:
+            sources.append(src2)
+            destinations.append(get_file(os.path.join(dst, basename)))
       else:
-        # make directory and copy the file
-        print(' [%s] -> [%s]' % (src[0], dst[0]))
-        os.makedirs(dst[1], exist_ok=True)
-        shutil.copy(src[0], dst[0])
-      # maybe delete the source file
-      if action == 'move':
-        os.remove(src[0])
+        sources, destinations = [src], [dst]
+      # apply the action to each file
+      for src, dst in zip(sources, destinations):
+        print(' %s %s -> %s' % (action, src[2], dst[2]))
+        # put a big "do not edit" warning at the top of the file
+        if row.get('add-header-comment', False) is True:
+          src = add_header(repo_link, src, dst[3])
+        # replace template keywords with values
+        templates = row.get('replace-keywords')
+        if type(templates) is str:
+          templates = [templates]
+        if type(templates) in (tuple, list):
+          src = replace_keywords(src, [get_file(t, path) for t in templates])
+        # make the copy (method depends on destination)
+        if dst[0].startswith('/var/www/html/'):
+          # copy to staging area
+          tmp = get_file(src[2] + '__tmp', '/common')
+          print(' [%s] -> [%s]' % (src[0], tmp[0]))
+          shutil.copy(src[0], tmp[0])
+          # make directory and move the file as user `webadmin`
+          cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
+          print('  [%s]' % cmd)
+          subprocess.check_call(cmd, shell=True)
+          cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
+          print('  [%s]' % cmd)
+          subprocess.check_call(cmd, shell=True)
+        else:
+          # make directory and copy the file
+          print(' [%s] -> [%s]' % (src[0], dst[0]))
+          os.makedirs(dst[1], exist_ok=True)
+          shutil.copy(src[0], dst[0])
+        # maybe delete the source file
+        if action == 'move':
+          os.remove(src[0])
     elif action == 'compile-coffee':
       # compile-coffee <src> <dst>
       src, dst = get_file(row['src'], path), get_file(row['dst'], path)

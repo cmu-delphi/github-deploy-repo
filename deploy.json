@@ -11,17 +11,12 @@
       "add-header-comment": true
     },
 
-    "// web files to pass information to and from github",
+    "// web interface for passing information to and from github",
     {
-      "type": "copy",
-      "src": "src/webhook.php",
-      "dst": "/home/automation/public_html/public/github_deploy_repo/webhook.php",
-      "add-header-comment": true
-    },
-    {
-      "type": "copy",
-      "src": "src/badge.php",
-      "dst": "/home/automation/public_html/public/github_deploy_repo/badge.php",
+      "type": "move",
+      "src": "src/",
+      "dst": "/home/automation/public_html/public/github_deploy_repo/",
+      "match": "^(.+)(\\.php)$",
       "add-header-comment": true
     }
 
