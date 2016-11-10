@@ -251,7 +251,7 @@ def execute(repo_link, path, config):
           basename = src2[2]
           if re.match(row['match'], basename) is not None:
             sources.append(src2)
-            destinations.append(get_file(os.path.join(dst, basename)))
+            destinations.append(get_file(os.path.join(dst[0], basename)))
       else:
         sources, destinations = [src], [dst]
       # apply the action to each file
