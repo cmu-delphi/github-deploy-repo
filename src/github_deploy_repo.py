@@ -70,6 +70,8 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2016-11-09
+  + support header for htaccess files
 2016-11-05
   * fancier header for generated files
 2016-11-03
@@ -135,7 +137,7 @@ def add_header(repo_link, src, dst_ext):
     pre_block, post_block = '<!--\n', '-->\n' + blanks
   elif ext in ('js', 'min.js', 'css', 'c', 'cpp', 'h', 'hpp', 'java'):
     pre_block, post_block = '/*\n', '*/\n' + blanks
-  elif ext in ('py', 'r', 'coffee'):
+  elif ext in ('py', 'r', 'coffee', 'htaccess'):
     pre_line, post_line, post_block = '# ', ' #', blanks
   elif ext in ('php'):
     # be sure to not introduce whitespace (e.g. newlines) outside php tags
