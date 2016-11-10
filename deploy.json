@@ -2,12 +2,16 @@
   "type": "delphi deploy config",
   "version": 1,
   "actions": [
+
+    "// the repo deployer",
     {
-      "type": "copy",
+      "type": "move",
       "src": "src/github_deploy_repo.py",
       "dst": "../github_deploy_repo.py",
       "add-header-comment": true
     },
+
+    "// web files to pass information to and from github",
     {
       "type": "copy",
       "src": "src/webhook.php",
@@ -20,5 +24,6 @@
       "dst": "/home/automation/public_html/public/github_deploy_repo/badge.php",
       "add-header-comment": true
     }
+
   ]
 }

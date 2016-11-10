@@ -35,6 +35,8 @@ commands ("actions") are described below.
       found in the list of template files. Each file is a JSON object
       containing a list of (key, value) pairs to be replaced. (optional)
 
+  - [move] Identical to the `copy` command except the source file is deleted.
+
   - [compile-coffee] Transpiles a CoffeeScript file to a JavaScript file.
     Additional fields:
     - [src] The input file. (required)
@@ -72,6 +74,8 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 2016-11-09
   + support header for htaccess files
+  + treat actions of type string as comments
+  + `move` command
 2016-11-05
   * fancier header for generated files
 2016-11-03
@@ -219,14 +223,17 @@ def execute(repo_link, path, config):
   # execute actions sequentially
   actions = cfg['actions']
   for (idx, row) in enumerate(actions):
-    # each row better be a map/dictionary with string field `type`
-    if type(row) != dict or 'type' not in row or type(row['type']) != str:
+    # each row should be either: a map/dict/object with a string field named
+    #   "type", or a comment string
+    if type(row) == str:
+      continue
+    elif type(row) != dict or 'type' not in row or type(row['type']) != str:
       raise Exception('invalid action (%d/%d)' % (idx + 1, len(actions)))
 
     # handle the action based on its type
     action = row.get('type').lower()
-    if action == 'copy':
-      # copy <src> <dst> [add-header-comment]
+    if action in ('copy', 'move'):
+      # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
       src, dst = get_file(row['src'], path), get_file(row['dst'], path)
       print(' %s %s -> %s' % (action, src[2], dst[2]))
       # check access
@@ -258,6 +265,9 @@ def execute(repo_link, path, config):
         print(' [%s] -> [%s]' % (src[0], dst[0]))
         os.makedirs(dst[1], exist_ok=True)
         shutil.copy(src[0], dst[0])
+      # maybe delete the source file
+      if action == 'move':
+        os.remove(src[0])
     elif action == 'compile-coffee':
       # compile-coffee <src> <dst>
       src, dst = get_file(row['src'], path), get_file(row['dst'], path)
