@@ -301,10 +301,10 @@ def execute(repo_link, path, config):
       else:
         basename, extension = src[2:4]
         if extension != '':
-          basename = basename[:-len(extension) - 1] + '.js'
+          basename = basename[:-len(extension)] + 'js'
         else:
           basename += '.js'
-        dst = get_file(src[1], basename)
+        dst = get_file(basename, src[1])
       # compile
       print(' %s %s -> %s' % (action, src[2], dst[2]))
       check_file(src[0])
