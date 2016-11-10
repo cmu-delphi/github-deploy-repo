@@ -43,11 +43,13 @@ commands ("actions") are described below.
   - [compile-coffee] Transpiles a CoffeeScript file to a JavaScript file.
     Additional fields:
     - [src] The input file. (required)
-    - [dst] The output file. (required)
+    - [dst] The output file. Default is `src` with extension replaced with "js"
+            unless otherwise specified. (optional)
 
   - [minimize-js] Minimize a JavaScript file. Additional fields:
     - [src] The input file. (required)
-    - [dst] The output file. (required)
+    - [dst] The output file. Defaults to `src` unless otherwise specified.
+            (optional)
 
 
 =======================
@@ -75,6 +77,9 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2016-11-10
+  * compile-coffee creates *.js by default
+  * minimize-js overwrites `src` by default
 2016-11-09
   + support header for htaccess files
   + treat actions of type string as comments
@@ -288,16 +293,33 @@ def execute(repo_link, path, config):
         if action == 'move':
           os.remove(src[0])
     elif action == 'compile-coffee':
-      # compile-coffee <src> <dst>
-      src, dst = get_file(row['src'], path), get_file(row['dst'], path)
+      # compile-coffee <src> [dst]
+      src = get_file(row['src'], path)
+      # infer destination
+      if 'dst' in row:
+        dst = get_file(row['dst'], path)
+      else:
+        basename, extension = src[2:4]
+        if extension != '':
+          basename = basename[:-len(extension + 1)] + '.js'
+        else:
+          basename += '.js'
+        dst = get_file(src[1], basename)
+      # compile
       print(' %s %s -> %s' % (action, src[2], dst[2]))
       check_file(src[0])
       cmd = "coffee -c -p '%s' > '%s'" % (src[0], dst[0])
       print('  [%s]' % cmd)
       subprocess.check_call(cmd, shell=True)
     elif action == 'minimize-js':
-      # minimize-js <src> <dst>
-      src, dst = get_file(row['src'], path), get_file(row['dst'], path)
+      # minimize-js <src> [dst]
+      src = get_file(row['src'], path)
+      # infer destination
+      if 'dst' in row:
+        dst = get_file(row['dst'], path)
+      else:
+        dst = src
+      # minimize
       print(' %s %s -> %s' % (action, src[2], dst[2]))
       check_file(src[0])
       cmd = "uglifyjs '%s' -c -m -o '%s'" % (src[0], dst[0])
