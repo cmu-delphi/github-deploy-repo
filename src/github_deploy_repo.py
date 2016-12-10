@@ -77,6 +77,8 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2016-12-09
+  + commit hash in header comment
 2016-11-10
   * compile-coffee creates *.js by default
   * minimize-js overwrites `src` by default
@@ -143,7 +145,7 @@ def get_file(name, path=None):
   return absname, path, name, ext
 
 
-def add_header(repo_link, src, dst_ext):
+def add_header(repo_link, commit, src, dst_ext):
   # build the header based on the source language
   ext = dst_ext.lower()
   pre_block, post_block, pre_line, post_line = '', '', '', ''
@@ -162,12 +164,18 @@ def add_header(repo_link, src, dst_ext):
     print(' warning: skipped header for file extension [%s]' % dst_ext)
     return src
 
+  # additional header lines
+  lines = [
+    repo_link,
+    ('Commit hash: %s' % commit),
+  ]
+
   # add the header to a copy of the source file
   tmp = get_file(src[0] + '__header')
   print(' adding header [%s] -> [%s]' % (src[0], tmp[0]))
   with open(tmp[0], 'wb') as fout:
     fout.write(bytes(pre_block, 'utf-8'))
-    for line in HEADER_LINES + [repo_link.center(HEADER_WIDTH)]:
+    for line in HEADER_LINES + [line.center(HEADER_WIDTH) for line in lines]:
       fout.write(bytes(pre_line + line + post_line + '\n', 'utf-8'))
     fout.write(bytes(post_block, 'utf-8'))
     with open(src[0], 'rb') as fin:
@@ -198,7 +206,7 @@ def replace_keywords(src, templates):
   return tmp
 
 
-def execute(repo_link, path, config):
+def execute(repo_link, path, config, commit):
   # magic and versioning
   typestr = 'delphi deploy config'
   v_min = v_max = 1
@@ -264,7 +272,7 @@ def execute(repo_link, path, config):
         print(' %s %s -> %s' % (action, src[2], dst[2]))
         # put a big "do not edit" warning at the top of the file
         if row.get('add-header-comment', False) is True:
-          src = add_header(repo_link, src, dst[3])
+          src = add_header(repo_link, commit, src, dst[3])
         # replace template keywords with values
         templates = row.get('replace-keywords')
         if type(templates) is str:
@@ -356,7 +364,7 @@ def deploy_repo(cnx, owner, name):
     config_name = 'deploy.json'
     config_file = os.path.join(tmpdir, config_name)
     if os.path.isfile(config_file):
-      execute(url[:-4], tmpdir, config_name)
+      execute(url[:-4], tmpdir, config_name, commit)
       status = 1
     else:
       print('deploy config does not exist for this repo (%s)' % config_file)
