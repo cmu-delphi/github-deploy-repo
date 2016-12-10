@@ -62,8 +62,9 @@ commands ("actions") are described below.
 
   - [import] Creates a symbolic link pointing to files placed (via `export`) in
      the shared directory. Additional fields:
-     - [name] The name of the exported file. (required)
      - [dst] The destination link. (required)
+     - [name] The name to use in the shared directory. Defaults to the basename
+       of `dst`. Can be used, for example, for versioning. (optional)
 
 
 =======================
@@ -245,7 +246,7 @@ def copymove_single(repo_link, commit, path, row, src, dst, is_move):
   # make the copy (method depends on destination)
   if dst[0].startswith('/var/www/html/'):
     # copy to staging area
-    tmp = get_file(src[2] + '__tmp', '/common')
+    tmp = get_file(src[2] + '__tmp', '/common/')
     print(' [%s] -> [%s]' % (src[0], tmp[0]))
     shutil.copy(src[0], tmp[0])
     # make directory and move the file as user `webadmin`
@@ -327,7 +328,7 @@ def minimize_js(repo_link, commit, path, row):
 def action_export(repo_link, commit, path, row):
   # export <src> [name]
   src = get_file(row['src'], path)
-  dst = get_file(row.get('name', src[2]), '../exports')
+  dst = get_file(row.get('name', src[2]), '../exports/')
   # copy to shared directory
   print(' export %s -> %s' % (src[0], dst[0]))
   copymove_single(repo_link, commit, path, row, src, dst, False)
@@ -335,10 +336,10 @@ def action_export(repo_link, commit, path, row):
 
 def action_import(repo_link, commit, path, row):
   # import <name> <dst>
-  src = get_file(row['name'], '../exports')
   dst = get_file(row['dst'], path)
+  src = get_file(row.get('name', dst[2]), '../exports/')
   # link to shared directory
-  print(' import %s -> %s' % (src[0], dst[0]))
+  print(' import %s <- %s' % (src[0], dst[0]))
   os.symlink(src[0], dst[0])
 
 
