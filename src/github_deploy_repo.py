@@ -7,7 +7,7 @@ Fetches github repos and "deploys" them on the delphi server. (Aka, push to
 production.) Deployment consists of compiling, minimizing, copying, etc.
 
 See also:
-  - https://github.com/cmu-delphi/
+  - https://github.com/cmu-delphi/github-deploy-repo
   - https://developer.github.com/webhooks/
   - /home/automation/public_html/github-webhook.php
 
@@ -70,7 +70,7 @@ id: unique identifier for each record
 repo: the name of the github repo (in the form of "owner/name")
 commit: hash of the latest commit
 datetime: the date and time of the last status update
-statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
+status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 
 =================
@@ -79,6 +79,7 @@ statue: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 2016-12-09
   + commit hash in header comment
+  * refactoring of function `execute`
 2016-11-10
   * compile-coffee creates *.js by default
   * minimize-js overwrites `src` by default
@@ -145,6 +146,11 @@ def get_file(name, path=None):
   return absname, path, name, ext
 
 
+def check_file(abspath, source_dir):
+  if not abspath.startswith(source_dir):
+    raise Exception('file [%s] is not inside [%s]' % (abspath, source_dir))
+
+
 def add_header(repo_link, commit, src, dst_ext):
   # build the header based on the source language
   ext = dst_ext.lower()
@@ -206,7 +212,103 @@ def replace_keywords(src, templates):
   return tmp
 
 
-def execute(repo_link, path, config, commit):
+def copymove(repo_link, commit, path, row):
+  # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
+  src, dst = get_file(row['src'], path), get_file(row['dst'], path)
+  # check access
+  source_dir = get_file(path)[0]
+  check_file(src[0], source_dir)
+  # determine which file(s) should be used
+  if 'match' in row:
+    sources, destinations = [], []
+    for name in glob.glob(os.path.join(src[0], '*')):
+      src2 = get_file(name)
+      basename = src2[2]
+      if re.match(row['match'], basename) is not None:
+        sources.append(src2)
+        destinations.append(get_file(os.path.join(dst[0], basename)))
+  else:
+    sources, destinations = [src], [dst]
+  # apply the action to each file
+  action = row.get('type').lower()
+  for src, dst in zip(sources, destinations):
+    print(' %s %s -> %s' % (action, src[2], dst[2]))
+    # put a big "do not edit" warning at the top of the file
+    if row.get('add-header-comment', False) is True:
+      src = add_header(repo_link, commit, src, dst[3])
+    # replace template keywords with values
+    templates = row.get('replace-keywords')
+    if type(templates) is str:
+      templates = [templates]
+    if type(templates) in (tuple, list):
+      src = replace_keywords(src, [get_file(t, path) for t in templates])
+    # make the copy (method depends on destination)
+    if dst[0].startswith('/var/www/html/'):
+      # copy to staging area
+      tmp = get_file(src[2] + '__tmp', '/common')
+      print(' [%s] -> [%s]' % (src[0], tmp[0]))
+      shutil.copy(src[0], tmp[0])
+      # make directory and move the file as user `webadmin`
+      cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
+      print('  [%s]' % cmd)
+      subprocess.check_call(cmd, shell=True)
+      cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
+      print('  [%s]' % cmd)
+      subprocess.check_call(cmd, shell=True)
+    else:
+      # make directory and copy the file
+      print(' [%s] -> [%s]' % (src[0], dst[0]))
+      os.makedirs(dst[1], exist_ok=True)
+      shutil.copy(src[0], dst[0])
+    # maybe delete the source file
+    if action == 'move':
+      os.remove(src[0])
+
+
+def compile_coffee(repo_link, commit, path, row):
+  # compile-coffee <src> [dst]
+  src = get_file(row['src'], path)
+  # check access
+  source_dir = get_file(path)[0]
+  check_file(src[0], source_dir)
+  # infer destination
+  if 'dst' in row:
+    dst = get_file(row['dst'], path)
+  else:
+    basename, extension = src[2:4]
+    if extension != '':
+      basename = basename[:-len(extension)] + 'js'
+    else:
+      basename += '.js'
+    dst = get_file(basename, src[1])
+  # compile
+  action = row.get('type').lower()
+  print(' %s %s -> %s' % (action, src[2], dst[2]))
+  cmd = "coffee -c -p '%s' > '%s'" % (src[0], dst[0])
+  print('  [%s]' % cmd)
+  subprocess.check_call(cmd, shell=True)
+
+
+def minimize_js(repo_link, commit, path, row):
+  # minimize-js <src> [dst]
+  src = get_file(row['src'], path)
+  # check access
+  source_dir = get_file(path)[0]
+  check_file(src[0], source_dir)
+  # infer destination
+  if 'dst' in row:
+    dst = get_file(row['dst'], path)
+  else:
+    dst = src
+  # minimize
+  action = row.get('type').lower()
+  print(' %s %s -> %s' % (action, src[2], dst[2]))
+  cmd = "uglifyjs '%s' -c -m -o '%s'" % (src[0], dst[0])
+  print('  [%s]' % cmd)
+  subprocess.check_call(cmd, shell=True)
+
+
+def execute(repo_link, commit, path, config):
   # magic and versioning
   typestr = 'delphi deploy config'
   v_min = v_max = 1
@@ -233,14 +335,14 @@ def execute(repo_link, path, config, commit):
     print('field `skip` is present and true - skipping deploy')
     return
 
-  # restrict read access to only files in the provided working directory
-  source_dir = get_file(path)[0]
-  def check_file(abspath):
-    if not abspath.startswith(source_dir):
-      raise Exception('file [%s] is not inside [%s]' % (abspath, source_dir))
-
   # execute actions sequentially
   actions = cfg['actions']
+  executors = {
+    'copy': copymove,
+    'move': copymove,
+    'compile-coffee': compile_coffee,
+    'minimize-js': minimize_js,
+  }
   for (idx, row) in enumerate(actions):
     # each row should be either: a map/dict/object with a string field named
     #   "type", or a comment string
@@ -251,88 +353,8 @@ def execute(repo_link, path, config, commit):
 
     # handle the action based on its type
     action = row.get('type').lower()
-    if action in ('copy', 'move'):
-      # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
-      src, dst = get_file(row['src'], path), get_file(row['dst'], path)
-      # check access
-      check_file(src[0])
-      # determine which file(s) should be used
-      if 'match' in row:
-        sources, destinations = [], []
-        for name in glob.glob(os.path.join(src[0], '*')):
-          src2 = get_file(name)
-          basename = src2[2]
-          if re.match(row['match'], basename) is not None:
-            sources.append(src2)
-            destinations.append(get_file(os.path.join(dst[0], basename)))
-      else:
-        sources, destinations = [src], [dst]
-      # apply the action to each file
-      for src, dst in zip(sources, destinations):
-        print(' %s %s -> %s' % (action, src[2], dst[2]))
-        # put a big "do not edit" warning at the top of the file
-        if row.get('add-header-comment', False) is True:
-          src = add_header(repo_link, commit, src, dst[3])
-        # replace template keywords with values
-        templates = row.get('replace-keywords')
-        if type(templates) is str:
-          templates = [templates]
-        if type(templates) in (tuple, list):
-          src = replace_keywords(src, [get_file(t, path) for t in templates])
-        # make the copy (method depends on destination)
-        if dst[0].startswith('/var/www/html/'):
-          # copy to staging area
-          tmp = get_file(src[2] + '__tmp', '/common')
-          print(' [%s] -> [%s]' % (src[0], tmp[0]))
-          shutil.copy(src[0], tmp[0])
-          # make directory and move the file as user `webadmin`
-          cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
-          print('  [%s]' % cmd)
-          subprocess.check_call(cmd, shell=True)
-          cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
-          print('  [%s]' % cmd)
-          subprocess.check_call(cmd, shell=True)
-        else:
-          # make directory and copy the file
-          print(' [%s] -> [%s]' % (src[0], dst[0]))
-          os.makedirs(dst[1], exist_ok=True)
-          shutil.copy(src[0], dst[0])
-        # maybe delete the source file
-        if action == 'move':
-          os.remove(src[0])
-    elif action == 'compile-coffee':
-      # compile-coffee <src> [dst]
-      src = get_file(row['src'], path)
-      # infer destination
-      if 'dst' in row:
-        dst = get_file(row['dst'], path)
-      else:
-        basename, extension = src[2:4]
-        if extension != '':
-          basename = basename[:-len(extension)] + 'js'
-        else:
-          basename += '.js'
-        dst = get_file(basename, src[1])
-      # compile
-      print(' %s %s -> %s' % (action, src[2], dst[2]))
-      check_file(src[0])
-      cmd = "coffee -c -p '%s' > '%s'" % (src[0], dst[0])
-      print('  [%s]' % cmd)
-      subprocess.check_call(cmd, shell=True)
-    elif action == 'minimize-js':
-      # minimize-js <src> [dst]
-      src = get_file(row['src'], path)
-      # infer destination
-      if 'dst' in row:
-        dst = get_file(row['dst'], path)
-      else:
-        dst = src
-      # minimize
-      print(' %s %s -> %s' % (action, src[2], dst[2]))
-      check_file(src[0])
-      cmd = "uglifyjs '%s' -c -m -o '%s'" % (src[0], dst[0])
-      print('  [%s]' % cmd)
-      subprocess.check_call(cmd, shell=True)
+    if action in executors:
+      executors[action](repo_link, commit, path, row)
     else:
       raise Exception('unsupported action: %s' % action)
 
@@ -364,7 +386,7 @@ def deploy_repo(cnx, owner, name):
     config_name = 'deploy.json'
     config_file = os.path.join(tmpdir, config_name)
     if os.path.isfile(config_file):
-      execute(url[:-4], tmpdir, config_name, commit)
+      execute(url[:-4], commit, tmpdir, config_name)
       status = 1
     else:
       print('deploy config does not exist for this repo (%s)' % config_file)
