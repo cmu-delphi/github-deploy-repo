@@ -328,7 +328,8 @@ def minimize_js(repo_link, commit, path, row):
 def action_export(repo_link, commit, path, row):
   # export <src> [name]
   src = get_file(row['src'], path)
-  dst = get_file(row.get('name', src[2]), '../exports/')
+  basename = get_file(row.get('name', src[1]))[2]
+  dst = get_file(basename, '../exports/')
   # copy to shared directory
   print(' export %s -> %s' % (src[0], dst[0]))
   copymove_single(repo_link, commit, path, row, src, dst, False)
@@ -337,7 +338,8 @@ def action_export(repo_link, commit, path, row):
 def action_import(repo_link, commit, path, row):
   # import <name> <dst>
   dst = get_file(row['dst'], path)
-  src = get_file(row.get('name', dst[2]), '../exports/')
+  basename = get_file(row.get('name', dst[1]))[2]
+  src = get_file(basename, '../exports/')
   # link to shared directory
   print(' import %s <- %s' % (src[0], dst[0]))
   os.symlink(src[0], dst[0])
