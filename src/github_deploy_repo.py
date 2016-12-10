@@ -44,12 +44,26 @@ commands ("actions") are described below.
     Additional fields:
     - [src] The input file. (required)
     - [dst] The output file. Default is `src` with extension replaced with "js"
-            unless otherwise specified. (optional)
+      unless otherwise specified. (optional)
 
   - [minimize-js] Minimize a JavaScript file. Additional fields:
     - [src] The input file. (required)
     - [dst] The output file. Defaults to `src` unless otherwise specified.
-            (optional)
+      (optional)
+
+  - [export] Makes a file available to other repos (via `import`) by placing it
+    in a shared directory. (This is essentially a `copy` action with a
+    predefined `dst` path.) Additional fields:
+    - [src] The file to export. (required)
+    - [name] The name to use in the shared directory. Defaults to the basename
+      of `src`. Can be used, for example, for versioning. (optional)
+    - [add-header-comment] See `copy`. (optional)
+    - [replace-keywords] See `copy`. (optional)
+
+  - [import] Creates a symbolic link pointing to files placed (via `export`) in
+     the shared directory. Additional fields:
+     - [name] The name of the exported file. (required)
+     - [dst] The destination link. (required)
 
 
 =======================
@@ -79,6 +93,7 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 2016-12-09
   + commit hash in header comment
+  + `export` and `import` actions
   * refactoring of function `execute`
 2016-11-10
   * compile-coffee creates *.js by default
@@ -86,7 +101,7 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 2016-11-09
   + support header for htaccess files
   + treat actions of type string as comments
-  + `move` command
+  + `move` action
   + match files for copy/move with optional regex
 2016-11-05
   * fancier header for generated files
@@ -146,7 +161,8 @@ def get_file(name, path=None):
   return absname, path, name, ext
 
 
-def check_file(abspath, source_dir):
+def check_file(abspath, path):
+  source_dir = get_file(path)[0]
   if not abspath.startswith(source_dir):
     raise Exception('file [%s] is not inside [%s]' % (abspath, source_dir))
 
@@ -212,12 +228,46 @@ def replace_keywords(src, templates):
   return tmp
 
 
+def copymove_single(repo_link, commit, path, row, src, dst, is_move):
+  action = 'move' if is_move else 'copy'
+  print(' %s %s -> %s' % (action, src[2], dst[2]))
+  # check access
+  check_file(src[0], path)
+  # put a big "do not edit" warning at the top of the file
+  if row.get('add-header-comment', False) is True:
+    src = add_header(repo_link, commit, src, dst[3])
+  # replace template keywords with values
+  templates = row.get('replace-keywords')
+  if type(templates) is str:
+    templates = [templates]
+  if type(templates) in (tuple, list):
+    src = replace_keywords(src, [get_file(t, path) for t in templates])
+  # make the copy (method depends on destination)
+  if dst[0].startswith('/var/www/html/'):
+    # copy to staging area
+    tmp = get_file(src[2] + '__tmp', '/common')
+    print(' [%s] -> [%s]' % (src[0], tmp[0]))
+    shutil.copy(src[0], tmp[0])
+    # make directory and move the file as user `webadmin`
+    cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
+    print('  [%s]' % cmd)
+    subprocess.check_call(cmd, shell=True)
+    cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
+    print('  [%s]' % cmd)
+    subprocess.check_call(cmd, shell=True)
+  else:
+    # make directory and copy the file
+    print(' [%s] -> [%s]' % (src[0], dst[0]))
+    os.makedirs(dst[1], exist_ok=True)
+    shutil.copy(src[0], dst[0])
+  # maybe delete the source file
+  if is_move:
+    os.remove(src[0])
+
+
 def copymove(repo_link, commit, path, row):
   # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
   src, dst = get_file(row['src'], path), get_file(row['dst'], path)
-  # check access
-  source_dir = get_file(path)[0]
-  check_file(src[0], source_dir)
   # determine which file(s) should be used
   if 'match' in row:
     sources, destinations = [], []
@@ -230,48 +280,14 @@ def copymove(repo_link, commit, path, row):
   else:
     sources, destinations = [src], [dst]
   # apply the action to each file
-  action = row.get('type').lower()
+  is_move = row.get('type').lower() == 'move'
   for src, dst in zip(sources, destinations):
-    print(' %s %s -> %s' % (action, src[2], dst[2]))
-    # put a big "do not edit" warning at the top of the file
-    if row.get('add-header-comment', False) is True:
-      src = add_header(repo_link, commit, src, dst[3])
-    # replace template keywords with values
-    templates = row.get('replace-keywords')
-    if type(templates) is str:
-      templates = [templates]
-    if type(templates) in (tuple, list):
-      src = replace_keywords(src, [get_file(t, path) for t in templates])
-    # make the copy (method depends on destination)
-    if dst[0].startswith('/var/www/html/'):
-      # copy to staging area
-      tmp = get_file(src[2] + '__tmp', '/common')
-      print(' [%s] -> [%s]' % (src[0], tmp[0]))
-      shutil.copy(src[0], tmp[0])
-      # make directory and move the file as user `webadmin`
-      cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
-      print('  [%s]' % cmd)
-      subprocess.check_call(cmd, shell=True)
-      cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
-      print('  [%s]' % cmd)
-      subprocess.check_call(cmd, shell=True)
-    else:
-      # make directory and copy the file
-      print(' [%s] -> [%s]' % (src[0], dst[0]))
-      os.makedirs(dst[1], exist_ok=True)
-      shutil.copy(src[0], dst[0])
-    # maybe delete the source file
-    if action == 'move':
-      os.remove(src[0])
+    copymove_single(repo_link, commit, path, row, src, dst, is_move)
 
 
 def compile_coffee(repo_link, commit, path, row):
   # compile-coffee <src> [dst]
   src = get_file(row['src'], path)
-  # check access
-  source_dir = get_file(path)[0]
-  check_file(src[0], source_dir)
-  # infer destination
   if 'dst' in row:
     dst = get_file(row['dst'], path)
   else:
@@ -281,6 +297,8 @@ def compile_coffee(repo_link, commit, path, row):
     else:
       basename += '.js'
     dst = get_file(basename, src[1])
+  # check access
+  check_file(src[0], path)
   # compile
   action = row.get('type').lower()
   print(' %s %s -> %s' % (action, src[2], dst[2]))
@@ -292,20 +310,36 @@ def compile_coffee(repo_link, commit, path, row):
 def minimize_js(repo_link, commit, path, row):
   # minimize-js <src> [dst]
   src = get_file(row['src'], path)
-  # check access
-  source_dir = get_file(path)[0]
-  check_file(src[0], source_dir)
-  # infer destination
   if 'dst' in row:
     dst = get_file(row['dst'], path)
   else:
     dst = src
+  # check access
+  check_file(src[0], path)
   # minimize
   action = row.get('type').lower()
   print(' %s %s -> %s' % (action, src[2], dst[2]))
   cmd = "uglifyjs '%s' -c -m -o '%s'" % (src[0], dst[0])
   print('  [%s]' % cmd)
   subprocess.check_call(cmd, shell=True)
+
+
+def action_export(repo_link, commit, path, row):
+  # export <src> [name]
+  src = get_file(row['src'], path)
+  dst = get_file(row.get('name', src[2]), '../exports')
+  # copy to shared directory
+  print(' export %s -> %s' % (src[0], dst[0]))
+  copymove_single(repo_link, commit, path, row, src, dst, False)
+
+
+def action_import(repo_link, commit, path, row):
+  # import <name> <dst>
+  src = get_file(row['name'], '../exports')
+  dst = get_file(row['dst'], path)
+  # link to shared directory
+  print(' import %s -> %s' % (src[0], dst[0]))
+  os.symlink(src[0], dst[0])
 
 
 def execute(repo_link, commit, path, config):
@@ -342,6 +376,8 @@ def execute(repo_link, commit, path, config):
     'move': copymove,
     'compile-coffee': compile_coffee,
     'minimize-js': minimize_js,
+    'export': action_export,
+    'import': action_import,
   }
   for (idx, row) in enumerate(actions):
     # each row should be either: a map/dict/object with a string field named
