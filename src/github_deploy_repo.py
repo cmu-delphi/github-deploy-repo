@@ -92,6 +92,8 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2016-12-12
+  * better error handling for `import`
 2016-12-09
   + commit hash in header comment
   + `export` and `import` actions
@@ -126,6 +128,7 @@ import argparse
 import glob
 import json
 import os
+import os.path
 import re
 import shutil
 import subprocess
@@ -342,7 +345,13 @@ def action_import(repo_link, commit, path, row):
   src = get_file(basename, 'exports/')
   # link to shared directory
   print(' import %s <- %s' % (src[0], dst[0]))
-  os.symlink(src[0], dst[0])
+  if not os.path.exists(dst[0]):
+    os.symlink(src[0], dst[0])
+    print(' created symlink')
+  elif os.path.islink(dst[0]):
+    print(' symlink with destination name already exists')
+  else:
+    raise Exception('object with destination name already exists')
 
 
 def execute(repo_link, commit, path, config):
