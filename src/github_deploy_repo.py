@@ -93,6 +93,8 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 =================
 
 2016-12-12
+  * create destination for `import` files
+2016-12-12
   * better error handling for `import`
 2016-12-09
   + commit hash in header comment
@@ -345,6 +347,7 @@ def action_import(repo_link, commit, path, row):
   src = get_file(basename, 'exports/')
   # link to shared directory
   print(' import %s <- %s' % (src[0], dst[0]))
+  os.makedirs(dst[1], exist_ok=True)
   if not os.path.exists(dst[0]):
     os.symlink(src[0], dst[0])
     print(' created symlink')
