@@ -92,6 +92,8 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2016-12-15
+  + include timestamp in header
 2016-12-12
   * create destination for `import` files
 2016-12-12
@@ -127,6 +129,7 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 # built-in
 import argparse
+import datetime
 import glob
 import json
 import os
@@ -135,6 +138,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 # external
 import mysql.connector
 # local
@@ -150,8 +154,6 @@ HEADER_LINES = [
   '| | | | | | | |  \| | | | || |   |  _| | | | | |  | |  ',
   '| |_| | |_| | | |\  | |_| || |   | |___| |_| | |  | |  ',
   '|____/ \___/  |_| \_|\___/ |_|   |_____|____/___| |_|  ',
-  ' ' * HEADER_WIDTH,
-  'Automatically generated from sources at:'.center(HEADER_WIDTH),
 ]
 
 
@@ -193,9 +195,15 @@ def add_header(repo_link, commit, src, dst_ext):
     return src
 
   # additional header lines
+  t = round(time.time())
+  dt = datetime.datetime.fromtimestamp(t).isoformat(' ')
   lines = [
+    '',
+    'Automatically generated from sources at:',
     repo_link,
+    '',
     ('Commit hash: %s' % commit),
+    ('Deployed at: %s (%d)' % (dt, t)),
   ]
 
   # add the header to a copy of the source file

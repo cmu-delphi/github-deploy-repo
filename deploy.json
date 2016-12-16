@@ -3,6 +3,9 @@
   "version": 1,
   "actions": [
 
+    "// imports",
+    {"type": "import", "dst": "../operations/secrets.py"},
+
     "// the repo deployer",
     {
       "type": "move",
