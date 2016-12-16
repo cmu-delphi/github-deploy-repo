@@ -7,7 +7,7 @@
     {
       "type": "move",
       "src": "src/github_deploy_repo.py",
-      "dst": "../github_deploy_repo.py",
+      "dst": "../operations/github_deploy_repo.py",
       "add-header-comment": true
     },
 
