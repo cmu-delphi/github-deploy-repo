@@ -92,6 +92,8 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2017-02-06
+  + path substitution using the "paths" object
 2016-12-15
   + include timestamp in header
 2016-12-12
@@ -127,7 +129,7 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
   * original version
 '''
 
-# built-in
+# standard library
 import argparse
 import datetime
 import glob
@@ -139,9 +141,9 @@ import shutil
 import subprocess
 import sys
 import time
-# external
+# third party
 import mysql.connector
-# local
+# first party
 import secrets
 
 
@@ -157,7 +159,19 @@ HEADER_LINES = [
 ]
 
 
-def get_file(name, path=None):
+def get_substituted_path(path, substitutions):
+  for key, value in substitutions.items():
+    pattern = '[[%s]]' % key
+    if pattern in path:
+      path = path.replace(pattern, value)
+  return path
+
+
+def get_file(name, path=None, substitutions={}):
+  new_name = get_substituted_path(name, substitutions)
+  if new_name != name:
+    print('substituted [%s] -> [%s]' % (name, new_name))
+    name = new_name
   if path is not None:
     name = os.path.join(path, name)
   absname = os.path.abspath(name)
@@ -279,9 +293,10 @@ def copymove_single(repo_link, commit, path, row, src, dst, is_move):
     os.remove(src[0])
 
 
-def copymove(repo_link, commit, path, row):
+def copymove(repo_link, commit, path, row, substitutions):
   # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
-  src, dst = get_file(row['src'], path), get_file(row['dst'], path)
+  src = get_file(row['src'], path, substitutions)
+  dst = get_file(row['dst'], path, substitutions)
   # determine which file(s) should be used
   if 'match' in row:
     sources, destinations = [], []
@@ -299,11 +314,11 @@ def copymove(repo_link, commit, path, row):
     copymove_single(repo_link, commit, path, row, src, dst, is_move)
 
 
-def compile_coffee(repo_link, commit, path, row):
+def compile_coffee(repo_link, commit, path, row, substitutions):
   # compile-coffee <src> [dst]
-  src = get_file(row['src'], path)
+  src = get_file(row['src'], path, substitutions)
   if 'dst' in row:
-    dst = get_file(row['dst'], path)
+    dst = get_file(row['dst'], path, substitutions)
   else:
     basename, extension = src[2:4]
     if extension != '':
@@ -321,11 +336,11 @@ def compile_coffee(repo_link, commit, path, row):
   subprocess.check_call(cmd, shell=True)
 
 
-def minimize_js(repo_link, commit, path, row):
+def minimize_js(repo_link, commit, path, row, substitutions):
   # minimize-js <src> [dst]
-  src = get_file(row['src'], path)
+  src = get_file(row['src'], path, substitutions)
   if 'dst' in row:
-    dst = get_file(row['dst'], path)
+    dst = get_file(row['dst'], path, substitutions)
   else:
     dst = src
   # check access
@@ -338,21 +353,21 @@ def minimize_js(repo_link, commit, path, row):
   subprocess.check_call(cmd, shell=True)
 
 
-def action_export(repo_link, commit, path, row):
+def action_export(repo_link, commit, path, row, substitutions):
   # export <src> [name]
-  src = get_file(row['src'], path)
+  src = get_file(row['src'], path, substitutions)
   basename = get_file(row.get('name', src[2]))[2]
-  dst = get_file(basename, 'exports/')
+  dst = get_file(basename, 'exports/', substitutions)
   # copy to shared directory
   print(' export %s -> %s' % (src[0], dst[0]))
   copymove_single(repo_link, commit, path, row, src, dst, False)
 
 
-def action_import(repo_link, commit, path, row):
+def action_import(repo_link, commit, path, row, substitutions):
   # import <name> <dst>
-  dst = get_file(row['dst'], path)
+  dst = get_file(row['dst'], path, substitutions)
   basename = get_file(row.get('name', dst[2]))[2]
-  src = get_file(basename, 'exports/')
+  src = get_file(basename, 'exports/', substitutions)
   # link to shared directory
   print(' import %s <- %s' % (src[0], dst[0]))
   os.makedirs(dst[1], exist_ok=True)
@@ -392,6 +407,13 @@ def execute(repo_link, commit, path, config):
     print('field `skip` is present and true - skipping deploy')
     return
 
+  # optional path substitution
+  paths = cfg.get('paths', {})
+  if len(paths) > 0:
+    print('will substitute the following path fragments:')
+    for key, value in paths.items():
+      print(' [[%s]] -> %s' % (key, value))
+
   # execute actions sequentially
   actions = cfg['actions']
   executors = {
@@ -413,7 +435,7 @@ def execute(repo_link, commit, path, config):
     # handle the action based on its type
     action = row.get('type').lower()
     if action in executors:
-      executors[action](repo_link, commit, path, row)
+      executors[action](repo_link, commit, path, row, paths)
     else:
       raise Exception('unsupported action: %s' % action)
 
