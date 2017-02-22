@@ -97,8 +97,10 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2017-02-22
+  + support zipped github repos (with deploy.json at second level)
 2017-02-21
-  + deploy a tar/zip package
+  + deploy a tar/zip package (with deploy.json at first level)
 2017-02-06
   + path substitution using the "paths" object
 2016-12-15
@@ -468,6 +470,17 @@ def deploy_repo(cnx, owner, name):
 
       # extract the file
       extractor.Extractor.extract(name, tmpdir)
+
+      # workaround for zipped github repos where deploy.json isn't at the root
+      contents = glob.glob(os.path.join(tmpdir, '*'))
+      if len(contents) == 1 and os.path.is_dir(contents[0]):
+        tmpdir2 = tmpdir + '2'
+        # rename ./tmpdir/repo -> ./tmpdir2
+        shutil.move(contents[0], tmpdir2)
+        # delete ./tmpdir
+        shutil.rmtree(tmpdir)
+        # rename tmpdir2 -> ./tmpdir
+        shutil.move(tmpdir2, tmpdir)
     else:
       # build the github repo link
       url = 'https://github.com/%s/%s.git' % (owner, name)
