@@ -473,7 +473,7 @@ def deploy_repo(cnx, owner, name):
 
       # workaround for zipped github repos where deploy.json isn't at the root
       contents = glob.glob(os.path.join(tmpdir, '*'))
-      if len(contents) == 1 and os.path.is_dir(contents[0]):
+      if len(contents) == 1 and os.path.isdir(contents[0]):
         tmpdir2 = tmpdir + '2'
         # rename ./tmpdir/repo -> ./tmpdir2
         shutil.move(contents[0], tmpdir2)
