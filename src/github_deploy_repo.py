@@ -6,6 +6,11 @@
 Fetches github repos and "deploys" them on the delphi server. (Aka, push to
 production.) Deployment consists of compiling, minimizing, copying, etc.
 
+Alternatively, a repo (or any other data) contained in a local tar or zip file
+can be deployed in the same way as an ordinary repo. This is useful for testing
+uncommitted changes, deploying unhosted projects, and deploying files which
+are not suitable for version control (e.g. binaries).
+
 See also:
   - https://github.com/cmu-delphi/github-deploy-repo
   - https://developer.github.com/webhooks/
@@ -92,6 +97,8 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 === Changelog ===
 =================
 
+2017-02-21
+  + deploy a tar/zip package
 2017-02-06
   + path substitution using the "paths" object
 2016-12-15
@@ -144,6 +151,7 @@ import time
 # third party
 import mysql.connector
 # first party
+import extractor
 import secrets
 
 
@@ -446,22 +454,34 @@ def deploy_repo(cnx, owner, name):
   status = -1
   commit = None
   try:
-    # build the github repo link
-    url = 'https://github.com/%s/%s.git' % (owner, name)
-    print('deploying repo %s/%s (%s)' % (owner, name, url))
-
     # a place for temporary files
     tmpdir = 'github_deploy_repo__tmp'
     os.makedirs(tmpdir)
 
-    # clone the repo
-    cmd = 'git clone %s %s' % (url, tmpdir)
-    subprocess.check_call(cmd, shell=True, timeout=60)
-    # get the latest commit hash
-    cmd = 'git --git-dir %s/.git rev-parse HEAD' % tmpdir
-    commit = subprocess.check_output(cmd, shell=True)
-    commit = str(commit, 'utf-8').strip()
-    print(' most recent commit is %s' % commit)
+    if owner == '<local>':
+      # hash the file for record keeping
+      sha1sum = subprocess.check_output("sha1sum '%s'" % name, shell=True)
+      commit = sha1sum.decode('utf-8')[:40]
+      url = 'file://%s' % name
+      print('deploying package %s/%s (%s)' % (owner, name, url))
+      print(' file SHA1 hash is %s' % commit)
+
+      # extract the file
+      extractor.Extractor.extract(name, tmpdir)
+    else:
+      # build the github repo link
+      url = 'https://github.com/%s/%s.git' % (owner, name)
+      print('deploying repo %s/%s (%s)' % (owner, name, url))
+
+      # clone the repo
+      cmd = 'git clone %s %s' % (url, tmpdir)
+      subprocess.check_call(cmd, shell=True, timeout=60)
+
+      # get the latest commit hash
+      cmd = 'git --git-dir %s/.git rev-parse HEAD' % tmpdir
+      commit = subprocess.check_output(cmd, shell=True)
+      commit = str(commit, 'utf-8').strip()
+      print(' most recent commit is %s' % commit)
 
     # deploy the repo
     config_name = 'deploy.json'
@@ -546,7 +566,9 @@ def set_repo_status(cnx, owner, name, commit, status):
   cnx.commit()
 
 
-if __name__ == '__main__':
+def main():
+  """Command line usage."""
+
   # args and usage
   parser = argparse.ArgumentParser()
   parser.add_argument(
@@ -560,11 +582,19 @@ if __name__ == '__main__':
     default=None,
     action='store',
     help='manually deploy the specified repo (e.g. cmu-delphi/www-nowcast)')
+  parser.add_argument(
+    '-p', '--package',
+    type=str,
+    default=None,
+    action='store',
+    help='manually deploy the specified tar/zip file (e.g. experimental.tgz)')
   args = parser.parse_args()
 
-  # require either database or specific repo
-  if not (args.database ^ (args.repo is not None)):
-    print('Exactly one of `database` or `repo` must be given.')
+  # require exactly one deploy source
+  count = lambda cond: 1 if cond else 0
+  sources = count(args.database) + count(args.repo) + count(args.package)
+  if sources != 1:
+    print('Exactly one deploy source must be given.')
     parser.print_help()
     sys.exit(0)
 
@@ -573,7 +603,7 @@ if __name__ == '__main__':
   cnx = mysql.connector.connect(user=u, password=p, database='utils')
 
   if args.database:
-    # deploy from database
+    # deploy github repos from the database
     repos = get_repo_list(cnx)
     if len(repos) > 0:
       print('will deploy the following repos:')
@@ -582,11 +612,18 @@ if __name__ == '__main__':
       deploy_all(cnx, repos)
     else:
       print('no repos to deploy')
-
-  if args.repo is not None:
-    # deploy manually
+  elif args.repo:
+    # deploy a specific github repo
     owner, name = args.repo.split('/')
+    deploy_repo(cnx, owner, name)
+  elif args.package:
+    # deploy a local tar/zip file as if it were a repo
+    owner, name = '<local>', args.package
     deploy_repo(cnx, owner, name)
 
   # database cleanup
   cnx.close()
+
+
+if __name__ == '__main__':
+  main()

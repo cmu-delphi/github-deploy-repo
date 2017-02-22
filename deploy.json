@@ -4,6 +4,7 @@
   "actions": [
 
     "// imports",
+    {"type": "import", "dst": "../operations/extractor.py"},
     {"type": "import", "dst": "../operations/secrets.py"},
 
     "// the repo deployer",
