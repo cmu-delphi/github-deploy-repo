@@ -496,11 +496,14 @@ def deploy_repo(cnx, owner, name):
       commit = str(commit, 'utf-8').strip()
       print(' most recent commit is %s' % commit)
 
+      # remove trailing ".git" from the display url
+      url = url[:-4]
+
     # deploy the repo
     config_name = 'deploy.json'
     config_file = os.path.join(tmpdir, config_name)
     if os.path.isfile(config_file):
-      execute(url[:-4], commit, tmpdir, config_name)
+      execute(url, commit, tmpdir, config_name)
       status = 1
     else:
       print('deploy config does not exist for this repo (%s)' % config_file)
