@@ -99,6 +99,7 @@ status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
 
 2017-02-22
   + support zipped github repos (with deploy.json at second level)
+  + header for *.sh files
 2017-02-21
   + deploy a tar/zip package (with deploy.json at first level)
 2017-02-06
@@ -208,7 +209,7 @@ def add_header(repo_link, commit, src, dst_ext):
     pre_block, post_block = '<!--\n', '-->\n' + blanks
   elif ext in ('js', 'min.js', 'css', 'c', 'cpp', 'h', 'hpp', 'java'):
     pre_block, post_block = '/*\n', '*/\n' + blanks
-  elif ext in ('py', 'r', 'coffee', 'htaccess'):
+  elif ext in ('py', 'r', 'coffee', 'htaccess', 'sh'):
     pre_line, post_line, post_block = '# ', ' #', blanks
   elif ext in ('php'):
     # be sure to not introduce whitespace (e.g. newlines) outside php tags
