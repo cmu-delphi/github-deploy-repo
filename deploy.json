@@ -3,15 +3,11 @@
   "version": 1,
   "actions": [
 
-    "// imports",
-    {"type": "import", "dst": "../operations/extractor.py"},
-    {"type": "import", "dst": "../operations/secrets.py"},
-
     "// the repo deployer",
     {
       "type": "move",
       "src": "src/github_deploy_repo.py",
-      "dst": "../operations/github_deploy_repo.py",
+      "dst": "../delphi/github_deploy_repo/github_deploy_repo.py",
       "add-header-comment": true
     },
 

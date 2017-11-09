@@ -145,17 +145,18 @@ import datetime
 import glob
 import json
 import os
-import os.path
 import re
 import shutil
 import subprocess
 import sys
 import time
+
 # third party
 import mysql.connector
+
 # first party
-import extractor
-import secrets
+import delphi.operations.secrets as secrets
+import delphi.utils.extractor as extractor
 
 
 # header for generated files
