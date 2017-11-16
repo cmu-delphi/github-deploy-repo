@@ -66,10 +66,16 @@ commands ("actions") are described below.
     - [replace-keywords] See `copy`. (optional)
 
   - [import] Creates a symbolic link pointing to files placed (via `export`) in
-     the shared directory. Additional fields:
-     - [dst] The destination link. (required)
-     - [name] The name to use in the shared directory. Defaults to the basename
-       of `dst`. Can be used, for example, for versioning. (optional)
+    the shared directory. Additional fields:
+    - [dst] The destination link. (required)
+    - [name] The name to use in the shared directory. Defaults to the basename
+      of `dst`. Can be used, for example, for versioning. (optional)
+
+  - [py3test] Runs unit and coverage tests for python using py3tester. Any test
+    errors or failures will cause the deployment to fail, even if it was
+    otherwise successful. Additional fields:
+    - [dir] The directory, relative to the repo root, containing unit tests.
+      Defaults to "tests" (e.g. "repo_name/tests"). (optional)
 
 
 =======================
@@ -153,6 +159,7 @@ import time
 
 # third party
 import mysql.connector
+import undefx.py3tester.py3tester as p3t
 
 # first party
 import delphi.operations.secrets as secrets
@@ -392,6 +399,48 @@ def action_import(repo_link, commit, path, row, substitutions):
     raise Exception('object with destination name already exists')
 
 
+def action_py3test(repo_link, commit, path, row, substitutions):
+  # py3test [dir]
+
+  # parse arguments
+  if 'dir' in row:
+    location = get_file(row['dir'], path, substitutions)[0]
+  else:
+    location = os.path.join(path, 'tests')
+  pattern = '^(test_.*|.*_test)\\.py$'
+  recursive = True
+
+  # find tests
+  test_files = p3t.find_tests(location, pattern, recursive)
+
+  # run tests and gather results
+  results = [p3t.analyze_results(p3t.run_tests(f)) for f in test_files]
+
+  # check for success
+  # TODO: show in repo badge
+  totals = {
+    'good': 0,
+    'bad': 0,
+    'lines': 0,
+    'hits': 0,
+  }
+  for test in results:
+    totals['good'] += test['unit']['summary']['pass']
+    totals['bad'] += test['unit']['summary']['fail']
+    totals['bad'] += test['unit']['summary']['error']
+    totals['lines'] += test['coverage']['summary']['total_lines']
+    totals['hits'] += test['coverage']['summary']['hit_lines']
+  if totals['bad'] > 0:
+    raise Exception('%d test(s) did not pass' % totals['bad'])
+  elif totals['good'] == 0:
+    print('no tests found')
+  else:
+    print('%d test(s) passed!' % totals['good'])
+    num = len(results)
+    cov = 100 * totals['hits'] / totals['lines']
+    print('overall coverage for %d files: %.1f%%' % (num, cov))
+
+
 def execute(repo_link, commit, path, config):
   # magic and versioning
   typestr = 'delphi deploy config'
@@ -435,6 +484,7 @@ def execute(repo_link, commit, path, config):
     'minimize-js': minimize_js,
     'export': action_export,
     'import': action_import,
+    'py3test': action_py3test,
   }
   for (idx, row) in enumerate(actions):
     # each row should be either: a map/dict/object with a string field named
