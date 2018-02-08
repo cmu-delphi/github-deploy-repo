@@ -408,10 +408,10 @@ def action_py3test(repo_link, commit, path, row, substitutions):
   else:
     location = os.path.join(path, 'tests')
   pattern = '^(test_.*|.*_test)\\.py$'
-  recursive = True
+  terminal = False
 
   # find tests
-  test_files = p3t.find_tests(location, pattern, recursive)
+  test_files = p3t.find_tests(location, pattern, terminal)
 
   # run tests and gather results
   results = [p3t.analyze_results(p3t.run_tests(f)) for f in test_files]
