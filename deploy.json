@@ -14,7 +14,7 @@
     "// web interface for passing information to and from github",
     {
       "type": "move",
-      "src": "src/",
+      "src": "src/web/",
       "dst": "/home/automation/public_html/public/github_deploy_repo/",
       "match": "^(.+)(\\.php)$",
       "add-header-comment": true

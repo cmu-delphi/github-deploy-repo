@@ -56,21 +56,6 @@ commands ("actions") are described below.
     - [dst] The output file. Defaults to `src` unless otherwise specified.
       (optional)
 
-  - [export] Makes a file available to other repos (via `import`) by placing it
-    in a shared directory. (This is essentially a `copy` action with a
-    predefined `dst` path.) Additional fields:
-    - [src] The file to export. (required)
-    - [name] The name to use in the shared directory. Defaults to the basename
-      of `src`. Can be used, for example, for versioning. (optional)
-    - [add-header-comment] See `copy`. (optional)
-    - [replace-keywords] See `copy`. (optional)
-
-  - [import] Creates a symbolic link pointing to files placed (via `export`) in
-    the shared directory. Additional fields:
-    - [dst] The destination link. (required)
-    - [name] The name to use in the shared directory. Defaults to the basename
-      of `dst`. Can be used, for example, for versioning. (optional)
-
   - [py3test] Runs unit and coverage tests for python using py3tester. Any test
     errors or failures will cause the deployment to fail, even if it was
     otherwise successful. Additional fields:
@@ -97,52 +82,6 @@ repo: the name of the github repo (in the form of "owner/name")
 commit: hash of the latest commit
 datetime: the date and time of the last status update
 status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
-
-
-=================
-=== Changelog ===
-=================
-
-2017-02-22
-  + support zipped github repos (with deploy.json at second level)
-  + header for *.sh files
-2017-02-21
-  + deploy a tar/zip package (with deploy.json at first level)
-2017-02-06
-  + path substitution using the "paths" object
-2016-12-15
-  + include timestamp in header
-2016-12-12
-  * create destination for `import` files
-2016-12-12
-  * better error handling for `import`
-2016-12-09
-  + commit hash in header comment
-  + `export` and `import` actions
-  * refactoring of function `execute`
-2016-11-10
-  * compile-coffee creates *.js by default
-  * minimize-js overwrites `src` by default
-2016-11-09
-  + support header for htaccess files
-  + treat actions of type string as comments
-  + `move` action
-  + match files for copy/move with optional regex
-2016-11-05
-  * fancier header for generated files
-2016-11-03
-  * create directories when copying files
-2016-10-28
-  + support header for PHP files
-  * fix newlines when replacing keywords
-  * fix copy to non-web locations
-  * use python secrets
-2016-10-21
-  + templating via "replace-keywords"
-2016-10-20
-  + switch database and store deploy status
-2016-10-17
-  * original version
 '''
 
 # standard library
@@ -170,11 +109,11 @@ import delphi.utils.extractor as extractor
 HEADER_WIDTH = 55
 HEADER_LINES = [
   # from the command line, run: figlet "DO NOT EDIT"
-  ' ____   ___    _   _  ___ _____   _____ ____ ___ _____ ',
-  '|  _ \ / _ \  | \ | |/ _ \_   _| | ____|  _ \_ _|_   _|',
-  '| | | | | | | |  \| | | | || |   |  _| | | | | |  | |  ',
-  '| |_| | |_| | | |\  | |_| || |   | |___| |_| | |  | |  ',
-  '|____/ \___/  |_| \_|\___/ |_|   |_____|____/___| |_|  ',
+  r' ____   ___    _   _  ___ _____   _____ ____ ___ _____ ',
+  r'|  _ \ / _ \  | \ | |/ _ \_   _| | ____|  _ \_ _|_   _|',
+  r'| | | | | | | |  \| | | | || |   |  _| | | | | |  | |  ',
+  r'| |_| | |_| | | |\  | |_| || |   | |___| |_| | |  | |  ',
+  r'|____/ \___/  |_| \_|\___/ |_|   |_____|____/___| |_|  ',
 ]
 
 
@@ -372,33 +311,6 @@ def minimize_js(repo_link, commit, path, row, substitutions):
   subprocess.check_call(cmd, shell=True)
 
 
-def action_export(repo_link, commit, path, row, substitutions):
-  # export <src> [name]
-  src = get_file(row['src'], path, substitutions)
-  basename = get_file(row.get('name', src[2]))[2]
-  dst = get_file(basename, 'exports/', substitutions)
-  # copy to shared directory
-  print(' export %s -> %s' % (src[0], dst[0]))
-  copymove_single(repo_link, commit, path, row, src, dst, False)
-
-
-def action_import(repo_link, commit, path, row, substitutions):
-  # import <name> <dst>
-  dst = get_file(row['dst'], path, substitutions)
-  basename = get_file(row.get('name', dst[2]))[2]
-  src = get_file(basename, 'exports/', substitutions)
-  # link to shared directory
-  print(' import %s <- %s' % (src[0], dst[0]))
-  os.makedirs(dst[1], exist_ok=True)
-  if not os.path.exists(dst[0]):
-    os.symlink(src[0], dst[0])
-    print(' created symlink')
-  elif os.path.islink(dst[0]):
-    print(' symlink with destination name already exists')
-  else:
-    raise Exception('object with destination name already exists')
-
-
 def action_py3test(repo_link, commit, path, row, substitutions):
   # py3test [dir]
 
@@ -482,8 +394,6 @@ def execute(repo_link, commit, path, config):
     'move': copymove,
     'compile-coffee': compile_coffee,
     'minimize-js': minimize_js,
-    'export': action_export,
-    'import': action_import,
     'py3test': action_py3test,
   }
   for (idx, row) in enumerate(actions):
