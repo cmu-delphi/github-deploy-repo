@@ -5,14 +5,14 @@ def get_repo_list(cnx):
   # pick all repos with status of 0
   cur = cnx.cursor()
   cur.execute("SELECT `repo` FROM `github_deploy_repo` WHERE `status` = 0")
-  repos = [repo.split('/') for (repo,) in cur]
+  repos = [repo.split('/', 2) for (repo,) in cur]
   cur.close()
   return repos
 
 
-def set_repo_status(cnx, owner, name, commit, status):
+def set_repo_status(cnx, owner, name, branch, commit, status):
   # update the repo status table
-  repo = '%s/%s' % (owner, name)
+  repo = '%s/%s/%s' % (owner, name, branch)
   cur = cnx.cursor()
 
   # execute the proper update

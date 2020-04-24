@@ -12,7 +12,7 @@
 - `id`
   unique identifier for each record
 - `repo`
-  the name of the github repo (in the form of "owner/name")
+  the name of the github repo (in the form of "owner/name/branch")
 - `commit`
   hash of the latest commit
 - `datetime`
