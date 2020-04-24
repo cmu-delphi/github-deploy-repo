@@ -23,6 +23,7 @@ import json
 import os
 import shutil
 import subprocess
+import urllib.parse
 
 # third party
 import mysql.connector
@@ -60,6 +61,10 @@ def get_argument_parser():
     default=None,
     action='store',
     help='manually deploy the specified tar/zip file (e.g. experimental.tgz)')
+  parser.add_argument(
+    '--branch',
+    default='master',
+    help='the branch to checkout prior to deploying (requires --repo)')
 
   return parser
 
@@ -123,20 +128,24 @@ def execute(repo_link, commit, path, config):
       raise Exception('unsupported action: %s' % action)
 
 
-def deploy_repo(cnx, owner, name):
+def deploy_repo(cnx, owner, name, branch):
   commit = None
 
   # check whether a deploy file exists
   if owner != '<local>':
     deploy_file_url = (
-      'https://raw.githubusercontent.com/%s/%s/master/deploy.json'
-    ) % (owner, name)
+      'https://raw.githubusercontent.com/%s/%s/%s/deploy.json'
+    ) % (
+      urllib.parse.quote_plus(owner),
+      urllib.parse.quote_plus(name),
+      urllib.parse.quote_plus(branch)
+    )
     response = requests.head(deploy_file_url)
     if response.status_code != 200:
       msg = (
         'repo %s/%s is private or does not have `deploy.json` '
-        'on branch "master"'
-      ) % (owner, name)
+        'on branch "%s"'
+      ) % (owner, name, branch)
       print(msg)
       status = 2
 
@@ -175,12 +184,21 @@ def deploy_repo(cnx, owner, name):
         shutil.move(tmpdir2, tmpdir)
     else:
       # build the github repo link
-      url = 'https://github.com/%s/%s.git' % (owner, name)
+      url = 'https://github.com/%s/%s.git' % (
+        urllib.parse.quote_plus(owner), urllib.parse.quote_plus(name),
+      )
       print('deploying repo %s/%s (%s)' % (owner, name, url))
 
       # clone the repo
       cmd = 'git clone %s %s' % (url, tmpdir)
       subprocess.check_call(cmd, shell=True, timeout=60)
+
+      # checkout the branch
+      cmd = 'git --git-dir %s/.git --work-tree=%s checkout %s' % (
+        tmpdir, tmpdir, branch,
+      )
+      subprocess.check_call(cmd, shell=True, timeout=60)
+      print('checked out branch %s' % branch)
 
       # get the latest commit hash
       cmd = 'git --git-dir %s/.git rev-parse HEAD' % tmpdir
@@ -223,7 +241,7 @@ def deploy_all(cnx, repos):
   exceptions = []
   for (owner, name) in repos:
     try:
-      deploy_repo(cnx, owner, name)
+      deploy_repo(cnx, owner, name, 'master')
     except Exception as ex:
       print('failed to deploy %s/%s - %s' % (str(owner), str(name), str(ex)))
       exceptions.append(ex)
@@ -244,6 +262,9 @@ def main(args):
     parser.print_help()
     return
 
+  if not args.repo and args.branch != 'master':
+    raise Exception('--branch is only available with --repo')
+
   # database setup
   u, p = secrets.db.auto
   cnx = mysql.connector.connect(user=u, password=p, database='utils')
@@ -261,11 +282,11 @@ def main(args):
   elif args.repo:
     # deploy a specific github repo
     owner, name = args.repo.split('/')
-    deploy_repo(cnx, owner, name)
+    deploy_repo(cnx, owner, name, args.branch)
   elif args.package:
     # deploy a local tar/zip file as if it were a repo
     owner, name = '<local>', args.package
-    deploy_repo(cnx, owner, name)
+    deploy_repo(cnx, owner, name, None)
 
   # database cleanup
   cnx.close()
