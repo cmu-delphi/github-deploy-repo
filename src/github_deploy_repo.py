@@ -228,8 +228,9 @@ def deploy_repo(cnx, owner, name, branch):
     if exception is None:
       exception = ex
 
-  # update repo status
-  database.set_repo_status(cnx, owner, name, commit, status)
+  if owner != '<local>':
+    # update repo status
+    database.set_repo_status(cnx, owner, name, commit, status)
 
   # throw the exception, if it exists
   if exception is not None:
