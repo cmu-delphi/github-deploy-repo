@@ -1,356 +1,66 @@
-'''
-===============
-=== Purpose ===
-===============
+"""Fetches github repos and deploys them on the delphi server.
 
-Fetches github repos and "deploys" them on the delphi server. (Aka, push to
-production.) Deployment consists of compiling, minimizing, copying, etc.
+This is how Delphi pushes code and other resources to production environments.
+Deployment consists of compiling, minimizing, copying, etc.
 
-Alternatively, a repo (or any other data) contained in a local tar or zip file
-can be deployed in the same way as an ordinary repo. This is useful for testing
-uncommitted changes, deploying unhosted projects, and deploying files which
-are not suitable for version control (e.g. binaries).
+In addition to automated deployment from GitHub, a repo (or any other data)
+contained in a local tar or zip file can be deployed in the same way as an
+ordinary repo. This is useful for testing uncommitted changes, deploying
+unhosted projects or private repositories, and deploying files which are not
+suitable for version control (e.g. binaries).
 
 See also:
-  - https://github.com/cmu-delphi/github-deploy-repo
-  - https://developer.github.com/webhooks/
-  - /home/automation/public_html/github-webhook.php
 
-
-=====================
-=== Configuration ===
-=====================
-
-This program follows deployment instructions defined in a JSON file. By
-default, this file is named "deploy.json" and lives in the root of the
-git repository. Most fields should be self-explanatory, but the various
-commands ("actions") are described below.
-
-  - [copy] Copies a file. Note that the source file must reside with the
-    repository (e.g. it will refuse to copy /etc/passwd). The destination
-    file, however, can be anywhere in the filesystem (well, anywhere the
-    user has write access). Existing files will be overwritten. Additional
-    fields:
-    - [src] The source file. (required)
-    - [dst] The destination file. (required)
-    - [match] A regular expression. The action is applied to all files whose
-      basename matches the regex. If this field is present, `src` and `dst` are
-      interpreted as directories instead of files. (optional)
-    - [add-header-comment] Whether to include a header comment (containing a
-      warning not to edit the file and a pointer to the repository) at the top
-      of the destination file. (optional)
-    - [replace-keywords] Replace template strings in source file with values
-      found in the list of template files. Each file is a JSON object
-      containing a list of (key, value) pairs to be replaced. (optional)
-
-  - [move] Identical to the `copy` command except the source file is deleted.
-
-  - [compile-coffee] Transpiles a CoffeeScript file to a JavaScript file.
-    Additional fields:
-    - [src] The input file. (required)
-    - [dst] The output file. Default is `src` with extension replaced with "js"
-      unless otherwise specified. (optional)
-
-  - [minimize-js] Minimize a JavaScript file. Additional fields:
-    - [src] The input file. (required)
-    - [dst] The output file. Defaults to `src` unless otherwise specified.
-      (optional)
-
-  - [py3test] Runs unit and coverage tests for python using py3tester. Any test
-    errors or failures will cause the deployment to fail, even if it was
-    otherwise successful. Additional fields:
-    - [dir] The directory, relative to the repo root, containing unit tests.
-      Defaults to "tests" (e.g. "repo_name/tests"). (optional)
-
-
-=======================
-=== Data Dictionary ===
-=======================
-
-`github_deploy_repo` is the table where repo information is stored.
-+----------+--------------+------+-----+---------------+----------------+
-| Field    | Type         | Null | Key | Default       | Extra          |
-+----------+--------------+------+-----+---------------+----------------+
-| id       | int(11)      | NO   | PRI | NULL          | auto_increment |
-| repo     | varchar(128) | NO   | UNI | NULL          |                |
-| commit   | char(40)     | NO   |     | 0000[...]0000 |                |
-| datetime | datetime     | NO   |     | NULL          |                |
-| status   | int(11)      | NO   |     | 0             |                |
-+----------+--------------+------+-----+---------------+----------------+
-id: unique identifier for each record
-repo: the name of the github repo (in the form of "owner/name")
-commit: hash of the latest commit
-datetime: the date and time of the last status update
-status: one of 0 (queued), 1 (success), 2 (skipped), or -1 (failed)
-'''
+- https://github.com/cmu-delphi/github-deploy-repo
+- https://developer.github.com/webhooks/
+- /home/automation/public_html/github-webhook.php
+"""
 
 # standard library
 import argparse
-import datetime
 import glob
 import json
 import os
-import re
 import shutil
 import subprocess
-import sys
-import time
 
 # third party
 import mysql.connector
-import undefx.py3tester.py3tester as p3t
 
 # first party
+from delphi.github_deploy_repo.actions.compile_coffee import compile_coffee
+from delphi.github_deploy_repo.actions.copymove import copymove
+from delphi.github_deploy_repo.actions.minimize_js import minimize_js
+from delphi.github_deploy_repo.actions.py3test import py3test
+import delphi.github_deploy_repo.database as database
 import delphi.operations.secrets as secrets
 import delphi.utils.extractor as extractor
 
 
-# header for generated files
-HEADER_WIDTH = 55
-HEADER_LINES = [
-  # from the command line, run: figlet "DO NOT EDIT"
-  r' ____   ___    _   _  ___ _____   _____ ____ ___ _____ ',
-  r'|  _ \ / _ \  | \ | |/ _ \_   _| | ____|  _ \_ _|_   _|',
-  r'| | | | | | | |  \| | | | || |   |  _| | | | | |  | |  ',
-  r'| |_| | |_| | | |\  | |_| || |   | |___| |_| | |  | |  ',
-  r'|____/ \___/  |_| \_|\___/ |_|   |_____|____/___| |_|  ',
-]
+def get_argument_parser():
+  """Define command line arguments."""
 
+  parser = argparse.ArgumentParser()
 
-def get_substituted_path(path, substitutions):
-  for key, value in substitutions.items():
-    pattern = '[[%s]]' % key
-    if pattern in path:
-      path = path.replace(pattern, value)
-  return path
+  parser.add_argument(
+    '-d', '--database',
+    default=False,
+    action='store_true',
+    help='fetch list of repos from the database')
+  parser.add_argument(
+    '-r', '--repo',
+    type=str,
+    default=None,
+    action='store',
+    help='manually deploy the specified repo (e.g. cmu-delphi/www-nowcast)')
+  parser.add_argument(
+    '-p', '--package',
+    type=str,
+    default=None,
+    action='store',
+    help='manually deploy the specified tar/zip file (e.g. experimental.tgz)')
 
-
-def get_file(name, path=None, substitutions={}):
-  new_name = get_substituted_path(name, substitutions)
-  if new_name != name:
-    print('substituted [%s] -> [%s]' % (name, new_name))
-    name = new_name
-  if path is not None:
-    name = os.path.join(path, name)
-  absname = os.path.abspath(name)
-  path, name = os.path.split(absname)
-  if '.' in name:
-    ext = name[name.index('.') + 1:]
-  else:
-    ext = ''
-  return absname, path, name, ext
-
-
-def check_file(abspath, path):
-  source_dir = get_file(path)[0]
-  if not abspath.startswith(source_dir):
-    raise Exception('file [%s] is not inside [%s]' % (abspath, source_dir))
-
-
-def add_header(repo_link, commit, src, dst_ext):
-  # build the header based on the source language
-  ext = dst_ext.lower()
-  pre_block, post_block, pre_line, post_line = '', '', '', ''
-  blanks = '\n\n\n'
-  if ext in ('html', 'xml'):
-    pre_block, post_block = '<!--\n', '-->\n' + blanks
-  elif ext in ('js', 'min.js', 'css', 'c', 'cpp', 'h', 'hpp', 'java'):
-    pre_block, post_block = '/*\n', '*/\n' + blanks
-  elif ext in ('py', 'r', 'coffee', 'htaccess', 'sh'):
-    pre_line, post_line, post_block = '# ', ' #', blanks
-  elif ext in ('php'):
-    # be sure to not introduce whitespace (e.g. newlines) outside php tags
-    pre_block, post_block = '<?php /*\n', '*/\n' + blanks + '?>'
-  else:
-    # nothing modified, return the original file
-    print(' warning: skipped header for file extension [%s]' % dst_ext)
-    return src
-
-  # additional header lines
-  t = round(time.time())
-  dt = datetime.datetime.fromtimestamp(t).isoformat(' ')
-  lines = [
-    '',
-    'Automatically generated from sources at:',
-    repo_link,
-    '',
-    ('Commit hash: %s' % commit),
-    ('Deployed at: %s (%d)' % (dt, t)),
-  ]
-
-  # add the header to a copy of the source file
-  tmp = get_file(src[0] + '__header')
-  print(' adding header [%s] -> [%s]' % (src[0], tmp[0]))
-  with open(tmp[0], 'wb') as fout:
-    fout.write(bytes(pre_block, 'utf-8'))
-    for line in HEADER_LINES + [line.center(HEADER_WIDTH) for line in lines]:
-      fout.write(bytes(pre_line + line + post_line + '\n', 'utf-8'))
-    fout.write(bytes(post_block, 'utf-8'))
-    with open(src[0], 'rb') as fin:
-      fout.write(fin.read())
-
-  # return the new file
-  return tmp
-
-
-def replace_keywords(src, templates):
-  # load list of (key, value) pairs
-  pairs = []
-  for t in templates:
-    with open(t[0], 'r') as f:
-      pairs.extend(json.loads(f.read()))
-
-  # make a new file to hold the results
-  tmp = get_file(src[0] + '__valued')
-  print(' replacing %d keywords [%s] -> [%s]' % (len(pairs), src[0], tmp[0]))
-  with open(tmp[0], 'w') as fout:
-    with open(src[0], 'r') as fin:
-      for line in fin.readlines():
-        for (k, v) in pairs:
-          line = line.replace(k, v)
-        fout.write(line)
-
-  # return the new file
-  return tmp
-
-
-def copymove_single(repo_link, commit, path, row, src, dst, is_move):
-  action = 'move' if is_move else 'copy'
-  print(' %s %s -> %s' % (action, src[2], dst[2]))
-  # check access
-  check_file(src[0], path)
-  # put a big "do not edit" warning at the top of the file
-  if row.get('add-header-comment', False) is True:
-    src = add_header(repo_link, commit, src, dst[3])
-  # replace template keywords with values
-  templates = row.get('replace-keywords')
-  if type(templates) is str:
-    templates = [templates]
-  if type(templates) in (tuple, list):
-    src = replace_keywords(src, [get_file(t, path) for t in templates])
-  # make the copy (method depends on destination)
-  if dst[0].startswith('/var/www/html/'):
-    # copy to staging area
-    tmp = get_file(src[2] + '__tmp', '/common/')
-    print(' [%s] -> [%s]' % (src[0], tmp[0]))
-    shutil.copy(src[0], tmp[0])
-    # make directory and move the file as user `webadmin`
-    cmd = "sudo -u webadmin -s mkdir -p '%s'" % (dst[1])
-    print('  [%s]' % cmd)
-    subprocess.check_call(cmd, shell=True)
-    cmd = "sudo -u webadmin -s mv -fv '%s' '%s'" % (tmp[0], dst[0])
-    print('  [%s]' % cmd)
-    subprocess.check_call(cmd, shell=True)
-  else:
-    # make directory and copy the file
-    print(' [%s] -> [%s]' % (src[0], dst[0]))
-    os.makedirs(dst[1], exist_ok=True)
-    shutil.copy(src[0], dst[0])
-  # maybe delete the source file
-  if is_move:
-    os.remove(src[0])
-
-
-def copymove(repo_link, commit, path, row, substitutions):
-  # {copy|move} <src> <dst> [add-header-comment] [replace-keywords]
-  src = get_file(row['src'], path, substitutions)
-  dst = get_file(row['dst'], path, substitutions)
-  # determine which file(s) should be used
-  if 'match' in row:
-    sources, destinations = [], []
-    for name in glob.glob(os.path.join(src[0], '*')):
-      src2 = get_file(name)
-      basename = src2[2]
-      if re.match(row['match'], basename) is not None:
-        sources.append(src2)
-        destinations.append(get_file(os.path.join(dst[0], basename)))
-  else:
-    sources, destinations = [src], [dst]
-  # apply the action to each file
-  is_move = row.get('type').lower() == 'move'
-  for src, dst in zip(sources, destinations):
-    copymove_single(repo_link, commit, path, row, src, dst, is_move)
-
-
-def compile_coffee(repo_link, commit, path, row, substitutions):
-  # compile-coffee <src> [dst]
-  src = get_file(row['src'], path, substitutions)
-  if 'dst' in row:
-    dst = get_file(row['dst'], path, substitutions)
-  else:
-    basename, extension = src[2:4]
-    if extension != '':
-      basename = basename[:-len(extension)] + 'js'
-    else:
-      basename += '.js'
-    dst = get_file(basename, src[1])
-  # check access
-  check_file(src[0], path)
-  # compile
-  action = row.get('type').lower()
-  print(' %s %s -> %s' % (action, src[2], dst[2]))
-  cmd = "coffee -c -p '%s' > '%s'" % (src[0], dst[0])
-  print('  [%s]' % cmd)
-  subprocess.check_call(cmd, shell=True)
-
-
-def minimize_js(repo_link, commit, path, row, substitutions):
-  # minimize-js <src> [dst]
-  src = get_file(row['src'], path, substitutions)
-  if 'dst' in row:
-    dst = get_file(row['dst'], path, substitutions)
-  else:
-    dst = src
-  # check access
-  check_file(src[0], path)
-  # minimize
-  action = row.get('type').lower()
-  print(' %s %s -> %s' % (action, src[2], dst[2]))
-  cmd = "uglifyjs '%s' -c -m -o '%s'" % (src[0], dst[0])
-  print('  [%s]' % cmd)
-  subprocess.check_call(cmd, shell=True)
-
-
-def action_py3test(repo_link, commit, path, row, substitutions):
-  # py3test [dir]
-
-  # parse arguments
-  if 'dir' in row:
-    location = get_file(row['dir'], path, substitutions)[0]
-  else:
-    location = os.path.join(path, 'tests')
-  pattern = '^(test_.*|.*_test)\\.py$'
-  terminal = False
-
-  # find tests
-  test_files = p3t.find_tests(location, pattern, terminal)
-
-  # run tests and gather results
-  results = [p3t.analyze_results(p3t.run_tests(f)) for f in test_files]
-
-  # check for success
-  # TODO: show in repo badge
-  totals = {
-    'good': 0,
-    'bad': 0,
-    'lines': 0,
-    'hits': 0,
-  }
-  for test in results:
-    totals['good'] += test['unit']['summary']['pass']
-    totals['bad'] += test['unit']['summary']['fail']
-    totals['bad'] += test['unit']['summary']['error']
-    totals['lines'] += test['coverage']['summary']['total_lines']
-    totals['hits'] += test['coverage']['summary']['hit_lines']
-  if totals['bad'] > 0:
-    raise Exception('%d test(s) did not pass' % totals['bad'])
-  elif totals['good'] == 0:
-    print('no tests found')
-  else:
-    print('%d test(s) passed!' % totals['good'])
-    num = len(results)
-    cov = 100 * totals['hits'] / totals['lines']
-    print('overall coverage for %d files: %.1f%%' % (num, cov))
+  return parser
 
 
 def execute(repo_link, commit, path, config):
@@ -394,7 +104,7 @@ def execute(repo_link, commit, path, config):
     'move': copymove,
     'compile-coffee': compile_coffee,
     'minimize-js': minimize_js,
-    'py3test': action_py3test,
+    'py3test': py3test,
   }
   for (idx, row) in enumerate(actions):
     # each row should be either: a map/dict/object with a string field named
@@ -481,7 +191,7 @@ def deploy_repo(cnx, owner, name):
       exception = ex
 
   # update repo status
-  set_repo_status(cnx, owner, name, commit, status)
+  database.set_repo_status(cnx, owner, name, commit, status)
 
   # throw the exception, if it exists
   if exception is not None:
@@ -503,70 +213,8 @@ def deploy_all(cnx, repos):
     raise exceptions[0]
 
 
-def get_repo_list(cnx):
-  # pick all repos with status of 0
-  cur = cnx.cursor()
-  cur.execute("SELECT `repo` FROM `github_deploy_repo` WHERE `status` = 0")
-  repos = [repo.split('/') for (repo,) in cur]
-  cur.close()
-  return repos
-
-
-def set_repo_status(cnx, owner, name, commit, status):
-  # update the repo status table
-  repo = '%s/%s' % (owner, name)
-  cur = cnx.cursor()
-
-  # execute the proper update
-  if commit is not None:
-    args = (repo, commit, status, commit, status)
-    cur.execute("""
-      INSERT INTO `github_deploy_repo`
-        (`repo`, `commit`, `datetime`, `status`)
-      VALUES
-        (%s, %s, now(), %s)
-      ON DUPLICATE KEY UPDATE
-        `commit` = %s, `datetime` = now(), status = %s
-    """, args)
-  else:
-    args = (repo, status, status)
-    cur.execute("""
-      INSERT INTO `github_deploy_repo`
-        (`repo`, `datetime`, `status`)
-      VALUES
-        (%s, now(), %s)
-      ON DUPLICATE KEY UPDATE
-        `datetime` = now(), status = %s
-    """, args)
-
-  # cleanup
-  cur.close()
-  cnx.commit()
-
-
-def main():
+def main(args):
   """Command line usage."""
-
-  # args and usage
-  parser = argparse.ArgumentParser()
-  parser.add_argument(
-    '-d', '--database',
-    default=False,
-    action='store_true',
-    help='fetch list of repos from the database')
-  parser.add_argument(
-    '-r', '--repo',
-    type=str,
-    default=None,
-    action='store',
-    help='manually deploy the specified repo (e.g. cmu-delphi/www-nowcast)')
-  parser.add_argument(
-    '-p', '--package',
-    type=str,
-    default=None,
-    action='store',
-    help='manually deploy the specified tar/zip file (e.g. experimental.tgz)')
-  args = parser.parse_args()
 
   # require exactly one deploy source
   count = lambda cond: 1 if cond else 0
@@ -574,7 +222,7 @@ def main():
   if sources != 1:
     print('Exactly one deploy source must be given.')
     parser.print_help()
-    sys.exit(0)
+    return
 
   # database setup
   u, p = secrets.db.auto
@@ -582,7 +230,7 @@ def main():
 
   if args.database:
     # deploy github repos from the database
-    repos = get_repo_list(cnx)
+    repos = database.get_repo_list(cnx)
     if len(repos) > 0:
       print('will deploy the following repos:')
       for (owner, name) in repos:
@@ -604,4 +252,4 @@ def main():
 
 
 if __name__ == '__main__':
-  main()
+  main(get_argument_parser().parse_args())
