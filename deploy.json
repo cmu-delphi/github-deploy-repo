@@ -6,8 +6,15 @@
     "// the repo deployer",
     {
       "type": "move",
-      "src": "src/github_deploy_repo.py",
-      "dst": "../delphi/github_deploy_repo/github_deploy_repo.py",
+      "src": "src/",
+      "dst": "../delphi/github_deploy_repo/",
+      "match": "^(.+)(\\.py)$",
+      "add-header-comment": true
+    }, {
+      "type": "move",
+      "src": "src/actions/",
+      "dst": "../delphi/github_deploy_repo/actions/",
+      "match": "^(.+)(\\.py)$",
       "add-header-comment": true
     },
 
