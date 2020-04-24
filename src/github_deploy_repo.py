@@ -228,8 +228,9 @@ def deploy_repo(cnx, owner, name, branch):
     if exception is None:
       exception = ex
 
-  # update repo status
-  database.set_repo_status(cnx, owner, name, commit, status)
+  if owner != '<local>':
+    # update repo status
+    database.set_repo_status(cnx, owner, name, commit, status)
 
   # throw the exception, if it exists
   if exception is not None:
@@ -265,9 +266,16 @@ def main(args):
   if not args.repo and args.branch != 'master':
     raise Exception('--branch is only available with --repo')
 
+  # deploy a local archive, which does not require the database
+  if args.package:
+    # deploy a local tar/zip file as if it were a repo
+    deploy_repo(None, '<local>', args.package, None)
+    return
+
   # database setup
   u, p = secrets.db.auto
-  cnx = mysql.connector.connect(user=u, password=p, database='utils')
+  cnx = mysql.connector.connect(
+      host=secrets.db.host, user=u, password=p, database='utils')
 
   if args.database:
     # deploy github repos from the database
@@ -279,14 +287,10 @@ def main(args):
       deploy_all(cnx, repos)
     else:
       print('no repos to deploy')
-  elif args.repo:
+  else:
     # deploy a specific github repo
     owner, name = args.repo.split('/')
     deploy_repo(cnx, owner, name, args.branch)
-  elif args.package:
-    # deploy a local tar/zip file as if it were a repo
-    owner, name = '<local>', args.package
-    deploy_repo(cnx, owner, name, None)
 
   # database cleanup
   cnx.close()
