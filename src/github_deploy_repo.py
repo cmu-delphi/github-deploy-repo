@@ -26,6 +26,7 @@ import subprocess
 
 # third party
 import mysql.connector
+import requests
 
 # first party
 from delphi.github_deploy_repo.actions.compile_coffee import compile_coffee
@@ -123,10 +124,29 @@ def execute(repo_link, commit, path, config):
 
 
 def deploy_repo(cnx, owner, name):
+  commit = None
+
+  # check whether a deploy file exists
+  if owner != '<local>':
+    deploy_file_url = (
+      'https://raw.githubusercontent.com/%s/%s/master/deploy.json'
+    ) % (owner, name)
+    response = requests.head(deploy_file_url)
+    if response.status_code != 200:
+      msg = (
+        'repo %s/%s is private or does not have `deploy.json` '
+        'on branch "master"'
+      ) % (owner, name)
+      print(msg)
+      status = 2
+
+      # update repo status and bail
+      database.set_repo_status(cnx, owner, name, commit, status)
+      return
+
   # try to deploy, but catch any exceptions that may arise
   exception = None
   status = -1
-  commit = None
   try:
     # a place for temporary files
     tmpdir = 'github_deploy_repo__tmp'
