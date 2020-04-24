@@ -5,7 +5,7 @@ generates a "badge" for github repos (based on http://shield.io)
 initial version by dfarrow on 2016-10-20
 
 test like:
-  curl http://delphi.midas.cs.cmu.edu/~automation/public/github_deploy_repo/badge.php?repo=cmu-delphi/www-nowcast
+  curl http://delphi.midas.cs.cmu.edu/~automation/public/github_deploy_repo/badge.php?repo=cmu-delphi/www-nowcast/master
 */
 
 // conveniently reuse automation's database "library"
@@ -14,6 +14,11 @@ $dbh = DatabaseConnect();
 
 // the data is in the query string
 $repo = $_GET['repo'];
+
+// default to branch master
+if (substr_count($repo, '/') === 1) {
+  $repo .= '/master';
+}
 
 // trust no one
 $repo = mysql_real_escape_string($repo);

@@ -150,7 +150,7 @@ def deploy_repo(cnx, owner, name, branch):
       status = 2
 
       # update repo status and bail
-      database.set_repo_status(cnx, owner, name, commit, status)
+      database.set_repo_status(cnx, owner, name, branch, commit, status)
       return
 
   # try to deploy, but catch any exceptions that may arise
@@ -230,7 +230,7 @@ def deploy_repo(cnx, owner, name, branch):
 
   if owner != '<local>':
     # update repo status
-    database.set_repo_status(cnx, owner, name, commit, status)
+    database.set_repo_status(cnx, owner, name, branch, commit, status)
 
   # throw the exception, if it exists
   if exception is not None:
@@ -240,11 +240,19 @@ def deploy_repo(cnx, owner, name, branch):
 def deploy_all(cnx, repos):
   # deploy one at a time, keeping track of any errors along the way
   exceptions = []
-  for (owner, name) in repos:
+  for (owner, name, branch) in repos:
+    info = '%s/%s (%s)' % (owner, name, branch)
+
+    if branch != 'master':
+      # TODO: add --env flag and corresponding "environment" field to
+      #       deploy.json, decide which repos to deploy based on that matching
+      print('automated deploy is only available for branch master', info)
+      continue
+
     try:
-      deploy_repo(cnx, owner, name, 'master')
+      deploy_repo(cnx, owner, name, branch)
     except Exception as ex:
-      print('failed to deploy %s/%s - %s' % (str(owner), str(name), str(ex)))
+      print('failed to deploy', info, ex)
       exceptions.append(ex)
 
   # throw the first exception, if there is one
@@ -282,8 +290,8 @@ def main(args):
     repos = database.get_repo_list(cnx)
     if len(repos) > 0:
       print('will deploy the following repos:')
-      for (owner, name) in repos:
-        print(' %s/%s' % (owner, name))
+      for (owner, name, branch) in repos:
+        print(' %s/%s (%s)' % (owner, name, branch))
       deploy_all(cnx, repos)
     else:
       print('no repos to deploy')

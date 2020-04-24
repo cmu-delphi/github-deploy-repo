@@ -20,14 +20,19 @@ $data = json_decode(file_get_contents('php://input'), true);
 $name = $data['repository']['name'];
 $repo = 'cmu-delphi/' . $name;
 $hash = $data['after'];
+$branch = strpos($data['ref'], 'refs/heads/') === 0 ? substr($data['ref'], 11) : null;
 
 // trust no one
 $repo = mysql_real_escape_string($repo);
 $hash = mysql_real_escape_string($hash);
+if ($branch !== null) {
+  $branch = mysql_real_escape_string($branch);
+}
 
-if ($name && $dbh) {
+if ($name && $dbh && $branch !== null) {
   // append the repo name to the list of repos to update
-  mysql_query("INSERT INTO utils.`github_deploy_repo` (`repo`, `commit`, `datetime`) VALUES ('{$repo}', '{$hash}', now()) ON DUPLICATE KEY UPDATE `commit` = '{$hash}', `datetime` = now(), status = 0");
+  $full_repo = $repo . '/' . $branch;
+  mysql_query("INSERT INTO utils.`github_deploy_repo` (`repo`, `commit`, `datetime`) VALUES ('{$full_repo}', '{$hash}', now()) ON DUPLICATE KEY UPDATE `commit` = '{$hash}', `datetime` = now(), status = 0");
 
   // queue the step that will actually update the repos ([github] Deploy Repo)
   RunStep(42);
