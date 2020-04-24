@@ -274,7 +274,8 @@ def main(args):
 
   # database setup
   u, p = secrets.db.auto
-  cnx = mysql.connector.connect(user=u, password=p, database='utils')
+  cnx = mysql.connector.connect(
+      host=secrets.db.host, user=u, password=p, database='utils')
 
   if args.database:
     # deploy github repos from the database
