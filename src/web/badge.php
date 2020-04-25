@@ -19,12 +19,17 @@ $repo = $_GET['repo'];
 if (substr_count($repo, '/') === 1) {
   $repo .= '/master';
 }
+$branch = explode('/', $repo, 3)[2];
+$length = strlen($branch);
+if ($length > 7) {
+  $branch = substr($branch, 0, 3) . '~' . substr($branch, $length - 3, $length);
+}
 
 // trust no one
 $repo = mysql_real_escape_string($repo);
 
 // defaults
-$hash = '????????';
+$hash = '???????';
 $status = -2;
 
 if ($repo && $dbh) {
@@ -69,22 +74,26 @@ header("Last-Modified: " . gmdate($fmt, $now) . " GMT");
 // generate the svg
 header("Content-Type: image/svg+xml;charset=utf-8");
 ?>
-<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40">
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60">
   <g shape-rendering="crispEdges">
-    <path fill="#555" d="M0 0h54v40H0z"/>
-    <path fill="#aaa" d="M54 0h68v20H54z"/>
-    <path fill="<?php print($color); ?>" d="M54 20h68v20H54z"/>
+    <path fill="#555" d="M0 0h54v60H0z"/>
+    <path fill="#aaa" d="M54 0h68v40H54z"/>
+    <path fill="<?php print($color); ?>" d="M54 40h68v20H54z"/>
   </g>
   <g fill="#fff" font-size="11">
     <g font-family="DejaVu Sans,Verdana,Geneva,sans-serif" text-anchor="end">
       <text x="49" y="14">version</text>
-      <text x="49" y="34">deploy</text>
+      <text x="49" y="34">branch</text>
+      <text x="49" y="54">deploy</text>
     </g>
     <g font-family="DejaVu Sans Mono,monospace" text-anchor="middle">
       <text x="87" y="14"><?php print($hash); ?></text>
     </g>
+    <g font-family="DejaVu Sans Mono,monospace" text-anchor="middle">
+      <text x="87" y="34"><?php print($branch); ?></text>
+    </g>
     <g font-family="DejaVu Sans,Verdana,Geneva,sans-serif" text-anchor="middle">
-      <text x="87" y="34"><?php print($label); ?></text>
+      <text x="87" y="54"><?php print($label); ?></text>
     </g>
   </g>
 </svg>
