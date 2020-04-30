@@ -7,7 +7,7 @@ def get_repo_list(cnx, branch):
   cur.execute("SELECT `repo` FROM `github_deploy_repo` WHERE `status` = 0")
   repos = [repo.split('/', 2) for (repo,) in cur]
   cur.close()
-  repos = [repo for repo in repos if repo[2] == branch]
+  repos = [tuple(repo) for repo in repos if repo[2] == branch]
   return repos
 
 
