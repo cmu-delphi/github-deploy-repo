@@ -48,13 +48,13 @@ def get_argument_parser():
     '-d', '--database',
     default=False,
     action='store_true',
-    help='fetch list of repos from the database')
+    help='fetch list of stale repos from the database')
   parser.add_argument(
     '-r', '--repo',
     type=str,
     default=None,
     action='store',
-    help='manually deploy the specified repo (e.g. cmu-delphi/www-nowcast)')
+    help='deploy only the specified repo (e.g. cmu-delphi/www-nowcast)')
   parser.add_argument(
     '-p', '--package',
     type=str,
@@ -256,11 +256,9 @@ def deploy_all(cnx, repos):
 def main(args):
   """Command line usage."""
 
-  # require exactly one deploy source
-  count = lambda cond: 1 if cond else 0
-  sources = count(args.database) + count(args.repo) + count(args.package)
-  if sources != 1:
-    print('Exactly one deploy source must be given.')
+  # don't mix package deploy with database deploy
+  if args.package and (args.database or args.repo):
+    print('--package cant be used with --repo or --database')
     parser.print_help()
     return
 
@@ -278,20 +276,30 @@ def main(args):
   cnx = mysql.connector.connect(
       host=secrets.db.host, user=u, password=p, database='utils')
 
-  if args.database:
-    # deploy github repos from the database
-    repos = database.get_repo_list(cnx, args.branch)
-    if len(repos) > 0:
-      print('will deploy the following repos:')
-      for (owner, name, branch) in repos:
-        print(' %s/%s (%s)' % (owner, name, branch))
-      deploy_all(cnx, repos)
-    else:
-      print('no repos to deploy')
-  else:
-    # deploy a specific github repo
+  specific_repos = set()
+  if args.repo:
     owner, name = args.repo.split('/')
-    deploy_repo(cnx, owner, name, args.branch)
+    specific_repos = {(owner, name, args.branch)}
+
+  database_repos = set()
+  if args.database:
+    database_repos = set(database.get_repo_list(cnx, args.branch))
+
+  if args.repo and args.database:
+    # deploy the specific repo only if it's stale in the database
+    repos = specific_repos & database_repos
+  else:
+    # deploy either a specific repo or all stale repos from the database
+    repos = specific_repos | database_repos
+  repo_list = sorted(repos)
+
+  if repo_list:
+    print('will deploy the following repos:')
+    for (owner, name, branch) in repo_list:
+      print(' %s/%s (%s)' % (owner, name, branch))
+    deploy_all(cnx, repo_list)
+  else:
+    print('no repos to deploy')
 
   # database cleanup
   cnx.close()

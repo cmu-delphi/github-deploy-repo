@@ -6,6 +6,72 @@ Fetches github repos and deploys them on the Delphi server.
 
 *Including this one :)*
 
+# Usage
+
+## Flags
+
+The following flags exist:
+
+- **`--package <file>`**
+
+    Deploy a local zip or tar file. Not compatible with any other flags.
+    Doesn't touch the database or GitHub at all.
+
+- **`--repo <owner/repo>`**
+
+    Deploy a specific GitHub repo. When used _without_ the `--database` flag,
+    the given repo is deployed unconditionally. When used _with_ the
+    `--database` flag, this acts as a filter such that among all stale repos in
+    the database, only the given repo will be deployed. In either case, the
+    database will be updated with the result.
+
+- **`--database`**
+
+    False by default. When present (i.e. true), get a list of stale repos from
+    the database and either: deploy them all, without the `--repo` flag; or
+    deploy just the stale repo given by the `--repo` flag. In either case, the
+    database will be updated with the result.
+
+- **`--branch <name>`**
+
+    Use branch "master" by default. For `--repo` and `--database` deployments,
+    condition the repo selection logic on this particular branch (e.g.
+    staleness checks, database status reporting). Prior to deployment, the
+    given branch will be checked out. This is useful, for example, for
+    deploying a particular branch in a particular environment.
+
+## Examples
+
+- Deploy a local tarball:
+
+    ```bash
+    python3 -m delphi.github_deploy_repo.github_deploy_repo \
+      --package foo.tar
+    ```
+
+- Deploy the `dev` branch of the `cmu-delphi/www-epicast` repo:
+
+    ```bash
+    python3 -m delphi.github_deploy_repo.github_deploy_repo \
+      --repo cmu-delphi/www-epicast --branch dev
+    ```
+
+- Deploy the `master` branch of all stale repos in the database:
+
+    ```bash
+    python3 -m delphi.github_deploy_repo.github_deploy_repo \
+      --database
+    ```
+
+- Deploy the `campus` branch of the `cmu-delphi/operations` repo, but only if
+it's stale in the database:
+
+    ```bash
+    python3 -m delphi.github_deploy_repo.github_deploy_repo \
+      --database --repo cmu-delphi/operations --branch campus
+    ```
+
+
 # Deployment Language
 
 <!-- TODO: provide additional documentation for the deployment language -->
@@ -13,7 +79,7 @@ Fetches github repos and deploys them on the Delphi server.
 Deployment instructions are defined in a JSON file. By default, this file is
 named **"deploy.json"** and lives in the root of the git repository. Most
 fields should be self-explanatory, but the various commands (aka "actions") are
-described below.
+described below. See this repo's [`deploy.json`](deploy.json) for an example.
 
 ## `copy`
 
