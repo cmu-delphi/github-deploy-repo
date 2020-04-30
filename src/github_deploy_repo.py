@@ -64,7 +64,7 @@ def get_argument_parser():
   parser.add_argument(
     '--branch',
     default='master',
-    help='the branch to checkout prior to deploying (requires --repo)')
+    help='the branch to checkout prior to deploying')
 
   return parser
 
@@ -241,17 +241,10 @@ def deploy_all(cnx, repos):
   # deploy one at a time, keeping track of any errors along the way
   exceptions = []
   for (owner, name, branch) in repos:
-    info = '%s/%s (%s)' % (owner, name, branch)
-
-    if branch != 'master':
-      # TODO: add --env flag and corresponding "environment" field to
-      #       deploy.json, decide which repos to deploy based on that matching
-      print('automated deploy is only available for branch master', info)
-      continue
-
     try:
       deploy_repo(cnx, owner, name, branch)
     except Exception as ex:
+      info = '%s/%s (%s)' % (owner, name, branch)
       print('failed to deploy', info, ex)
       exceptions.append(ex)
 
@@ -271,8 +264,8 @@ def main(args):
     parser.print_help()
     return
 
-  if not args.repo and args.branch != 'master':
-    raise Exception('--branch is only available with --repo')
+  if args.package and args.branch != 'master':
+    raise Exception('--branch is not available with --package')
 
   # deploy a local archive, which does not require the database
   if args.package:
@@ -287,7 +280,7 @@ def main(args):
 
   if args.database:
     # deploy github repos from the database
-    repos = database.get_repo_list(cnx)
+    repos = database.get_repo_list(cnx, args.branch)
     if len(repos) > 0:
       print('will deploy the following repos:')
       for (owner, name, branch) in repos:
