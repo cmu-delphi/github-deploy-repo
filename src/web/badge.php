@@ -15,9 +15,9 @@ $dbh = DatabaseConnect();
 // the data is in the query string
 $repo = $_GET['repo'];
 
-// default to branch master
+// default to branch main
 if (substr_count($repo, '/') === 1) {
-  $repo .= '/master';
+  $repo .= '/main';
 }
 $branch = explode('/', $repo, 3)[2];
 $length = strlen($branch);
