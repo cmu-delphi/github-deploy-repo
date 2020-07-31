@@ -137,7 +137,7 @@ def copymove(repo_link, commit, path, row, substitutions):
   # determine which file(s) should be used
   if 'match' in row:
     sources, destinations = [], []
-    for name in glob.glob(os.path.join(src[0], '*', recursive=True)):
+    for name in glob.glob(os.path.join(src[0], '*'), recursive=True):
       src2 = file_operations.get_file(name)
       basename = src2[2]
       if re.match(row['match'], basename) is not None:
