@@ -92,8 +92,7 @@ Additional fields:
 
 - `src` (**required**)
 
-    The source file. If this ends with `*`, such as `public/*`, and `match` is
-    present, recursively match all files in this directory.
+    The source file.
 
 - `dst` (**required**)
 
@@ -116,6 +115,13 @@ Additional fields:
     Replace template strings in source file with values found in the list of
     template files. Each file is a JSON object containing a list of (key,
     value) pairs to be replaced.
+
+- `recursive` (_optional_)
+
+    If set to true (false by default), `src` and `dst` are treated as
+    directories. `match` must be specified, and all matching files are copied,
+    including subdirectories.
+
 
 ## `move`
 
