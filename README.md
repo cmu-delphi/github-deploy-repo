@@ -92,7 +92,8 @@ Additional fields:
 
 - `src` (**required**)
 
-    The source file.
+    The source file. If this ends with `*`, such as `public/*`, and `match` is
+    present, recursively match all files in this directory.
 
 - `dst` (**required**)
 
