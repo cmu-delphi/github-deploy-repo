@@ -116,6 +116,13 @@ Additional fields:
     template files. Each file is a JSON object containing a list of (key,
     value) pairs to be replaced.
 
+- `recursive` (_optional_)
+
+    If set to true (false by default), `src` and `dst` are treated as
+    directories. `match` must be specified, and all matching files are copied,
+    including subdirectories.
+
+
 ## `move`
 
 Identical to the [`copy`](#copy) command, except the source file is deleted.
