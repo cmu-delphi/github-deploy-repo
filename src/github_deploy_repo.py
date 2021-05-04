@@ -34,6 +34,7 @@ from delphi.github_deploy_repo.actions.compile_coffee import compile_coffee
 from delphi.github_deploy_repo.actions.copymove import copymove
 from delphi.github_deploy_repo.actions.minimize_js import minimize_js
 from delphi.github_deploy_repo.actions.py3test import py3test
+from delphi.github_deploy_repo.actions.pytest import pytest
 import delphi.github_deploy_repo.database as database
 import delphi.operations.secrets as secrets
 import delphi.utils.extractor as extractor
@@ -111,6 +112,7 @@ def execute(repo_link, commit, path, config):
     'compile-coffee': compile_coffee,
     'minimize-js': minimize_js,
     'py3test': py3test,
+    'pytest': pytest
   }
   for (idx, row) in enumerate(actions):
     # each row should be either: a map/dict/object with a string field named
